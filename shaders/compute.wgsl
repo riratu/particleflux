@@ -37,25 +37,28 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     p.position += p.velocity * uniforms.deltaTime;
 
     // Attraction to center of screen
-    let center = vec2<f32>(uniforms.mouseX, uniforms.mouseY);
-    //let center = vec2<f32>(uniforms.screenWidth * 0.5, uniforms.screenHeight * 0.5);
+    //let center = vec2<f32>(uniforms.mouseX, uniforms.mouseY);
+    let center = vec2<f32>(uniforms.screenWidth * 0.5, uniforms.screenHeight * 0.5);
     let toCenter = center - p.position;
     let distToCenter = length(toCenter);
+
 
     if distToCenter > 0.0 {
         let maxDistance = 500.0;
         let normalizedDist = clamp(distToCenter / maxDistance, 0.0, 1.0);
 
         // Exponential curve
-        let forceStrength = 1000.0 * pow(normalizedDist, 1.0);
+        let forceStrength = 1000.0 * pow(normalizedDist, 2.0);
 
         let attraction = normalize(toCenter) * forceStrength;
         p.velocity += attraction * uniforms.deltaTime;
     }
 
 
-    // Apply damping (friction) to prevent infinite acceleration
-    p.velocity *= 0.98; // 2% velocity loss per frame
+    // Simple downward gravity
+  //let gravity = vec2<f32>(0.0, 2000.0); // Positive Y is down
+   // p.velocity += gravity * uniforms.deltaTime;
+
 
     // Clamp velocity to prevent excessive speed
     let speed = length(p.velocity);
@@ -64,27 +67,23 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         p.velocity = normalize(p.velocity) * maxSpeed;
     }
 
-    // Leben: Partikel werden älter
-    p.life -= uniforms.deltaTime * .1;
+    // Age the Partivles if you like so.
+    p.life -= uniforms.deltaTime * .01;
 
-    // Recyceln: Wenn Partikel tot, neu spawnen
-
-/*
+    // Recyceln: Wenn Particle dead, spawn a new one.
     if p.life <= 0.0 {
         p.position = vec2<f32>(
-            random(f32(index * 13)) * uniforms.screenWidth, // start posX (0 to screenWidth)
-            random(f32(index * 9)) * uniforms.screenHeight,  // start posY (top of screen)
+            uniforms.mouseX + (random(f32(index * 13)) * 100), // start posX (0 to screenWidth)
+            uniforms.mouseY + (random(f32(index * 9)) * 100),  // start posY (top of screen)
         );
         p.velocity = vec2<f32>(
-            (random(f32(index)) - 0.5) * 50.0, // x vel (pixels/s)
-            (random(f32(index + 1)) - 0.5) * 50.0 // y vel (pixels/s)
+            (random(f32(index)) - 0.5) * 1.0, // x vel (pixels/s)
+            (random(f32(index + 1)) - 0.5) * 1.0 // y vel (pixels/s)
         );
         p.life = 1.0;
     }
-    */
 
-
-    // Grenzen: Partikel prallen ab (screen boundaries)
+    // Particles bounce on screen boundaries)
     if p.position.x < 0.0 || p.position.x > uniforms.screenWidth {
         p.velocity.x = -p.velocity.x;
         p.position.x = clamp(p.position.x, 0.0, uniforms.screenWidth);
@@ -94,34 +93,24 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         p.velocity.y = -p.velocity.y * random(f32(index + 10)) * 0.5;
     }
 
+
+    // We calculate the Position a little to in the Future since there is some time left between frames.
     let futurePos = p.position + normalize(p.velocity) * 1;
 
-    // Kollisionserkennung mit anderen Partikeln
+    // Interactions with other Particles.
     let particleCount = arrayLength(&particles);
     for (var i = 0u; i < particleCount; i++) {
         if i == index {
             continue;
         }
 
-        //if (p.position.y < uniforms.screenHeight * 0.8) {
-        //    continue;
-        //}
-
         let other = particles[i];
         let dist = length(futurePos - other.position);
-        let minDist = (p.size + other.size * 5); // Sum of radii in pixels
+        let repulsionRange = (p.size + other.size * 6); // Sum of radii in pixels
 
-        // Wenn Kollision erkannt, separate particles and bounce
-        if dist < minDist {
+        if dist < repulsionRange {
             // Calculate direction from other to this particle
             let direction = normalize(futurePos - other.position);
-
-/*
-            // Move particle so they just touch (with small buffer to prevent re-collision)
-            let overlap = minDist - dist;
-            let separationBuffer = 1.1; // Extra pixels to ensure separation
-            p.position += direction * (overlap + separationBuffer);
-
 
             // Reflect velocity along collision normal (bounce)
             let relativeVelocity = p.velocity - other.velocity;
@@ -129,28 +118,15 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
            // Calculate repulsive force based on distance
            let overlap2 = (p.size + other.size) - dist;
-           */
-           // Particles are close but not overlapping - apply weaker repulsion
-           let repulsionRange = minDist; // Distance at which repulsion starts
 
-           if dist < repulsionRange {
-               let repulsionStrength = 2.2; // Weaker force for non-overlapping particles
-               let forceMagnitude = repulsionStrength * (repulsionRange - dist) / repulsionRange;
-               let repulsionForce = direction * forceMagnitude;
+          let repulsionStrength = 400.2;
+          // Exponential force - gets much stronger as particles get closer
+          let normalizedDist = dist / repulsionRange; // 0 to 1
+          let forceMagnitude = repulsionStrength * pow(1.0 - normalizedDist, 3.0);
+          let repulsionForce = direction * forceMagnitude;
 
-               p.velocity += repulsionForce * 0.5;
-               // other.velocity -= repulsionForce * 0.5;
-           }
-
-           // Optional: Still apply collision response for realistic bouncing
-          /* if velocityAlongNormal < 0.0 {
-               let restitution = 0.9;
-               var impulse = -(1.0 + restitution) * velocityAlongNormal;
-               let maxImpulse = 0.1;
-               impulse = min(impulse, maxImpulse);
-               p.velocity += direction * impulse * 0.5;
-           }
-           */
+          p.velocity += repulsionForce * 0.5;
+          particles[i].velocity -= repulsionForce * 0.5;
 
         }
     }

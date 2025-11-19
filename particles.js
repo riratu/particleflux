@@ -1,5 +1,3 @@
-// particles.js
-
 const NUM_PARTICLES = 500;
 
 let mouseX = 0;
@@ -18,10 +16,9 @@ async function loadShader(path) {
             throw new Error(`HTTP ${response.status}: ${path}`);
         }
         const text = await response.text();
-        console.log(`✅ Shader geladen: ${path}`);
         return text;
     } catch (error) {
-        console.error(`❌ Fehler beim Laden von ${path}:`, error);
+        console.error(`Fehler beim Laden von ${path}:`, error);
         throw error;
     }
 }
@@ -60,14 +57,13 @@ async function main() {
             alphaMode: 'premultiplied',
         });
 
-        console.log('✅ WebGPU erfolgreich initialisiert');
+        console.log('WEbGPU initialized');
         console.log('Format:', format);
 
         // Lade Shaders
-        console.log('📂 Lade Shaders...');
         const computeCode = await loadShader('shaders/compute.wgsl');
         const renderCode = await loadShader('shaders/render.wgsl');
-        console.log('✅ Alle Shaders geladen');
+        console.log('Shaders loaded');
 
         // Initialisiere Partikel (in pixel coordinates)
         const particleData = new Float32Array(NUM_PARTICLES * 6);

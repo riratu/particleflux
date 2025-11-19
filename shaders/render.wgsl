@@ -88,24 +88,18 @@ fn vs_main(in: VertexInput, @builtin(vertex_index) vertexIndex: u32, @builtin(in
     // Calculate velocity magnitude
     let speed = length(in.velocity);
 
-    // Map speed to hue (0-1 range, full color spectrum)
-    // Adjust maxSpeed to match your particle system's typical velocities
-    let maxSpeed = 200.0; // Tune this value based on your particles
-    let normalizedSpeed = clamp(speed / maxSpeed, 0.0, 1.0);
+    let maxSpeed = 200.0; // Tune this value based on the Particle Speeds
+    let normalizedSpeed = clamp(speed / maxSpeed, 0.0, 1.0) * 0.7;
 
-    // Hue: 0 = red, 0.33 = green, 0.66 = blue, 1.0 = red again
-    let hue = normalizedSpeed;
-    let saturation = 1.0; // Full saturation for vibrant colors
-    let lightness = 0.5;  // Medium lightness
+    let hue = normalizedSpeed + 0.5;
+    let saturation = 0.5;
+    let lightness = 0.4;
 
     let rgb = hslToRgb(hue, saturation, lightness);
     out.color = vec4<f32>(rgb, 1.0);
 
     return out;
 }
-
-
-
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {

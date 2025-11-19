@@ -59,10 +59,13 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   //let gravity = vec2<f32>(0.0, 2000.0); // Positive Y is down
    // p.velocity += gravity * uniforms.deltaTime;
 
+    // Apply damping (friction) to make this wohle circus a little quieter
+    p.velocity *= 0.999; // 2% velocity loss per frame
+
 
     // Clamp velocity to prevent excessive speed
     let speed = length(p.velocity);
-    let maxSpeed = 500.0; // Maximum speed in pixels/s
+    let maxSpeed = 1000.0; // Maximum speed in pixels/s
     if speed > maxSpeed {
         p.velocity = normalize(p.velocity) * maxSpeed;
     }
@@ -72,9 +75,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // Recyceln: Wenn Particle dead, spawn a new one.
     if p.life <= 0.0 {
+        let randomSpread = 10.0;
         p.position = vec2<f32>(
-            uniforms.mouseX + (random(f32(index * 13)) * 100), // start posX (0 to screenWidth)
-            uniforms.mouseY + (random(f32(index * 9)) * 100),  // start posY (top of screen)
+            uniforms.mouseX + (random(f32(index * 13)) * randomSpread), // start posX (0 to screenWidth)
+            uniforms.mouseY + (random(f32(index * 9)) * randomSpread),  // start posY (top of screen)
         );
         p.velocity = vec2<f32>(
             (random(f32(index)) - 0.5) * 1.0, // x vel (pixels/s)
@@ -119,7 +123,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
            // Calculate repulsive force based on distance
            let overlap2 = (p.size + other.size) - dist;
 
-          let repulsionStrength = 400.2;
+          let repulsionStrength = 1000.2;
           // Exponential force - gets much stronger as particles get closer
           let normalizedDist = dist / repulsionRange; // 0 to 1
           let forceMagnitude = repulsionStrength * pow(1.0 - normalizedDist, 3.0);

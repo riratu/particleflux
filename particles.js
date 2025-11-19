@@ -68,8 +68,8 @@ async function main() {
         // Initialisiere Partikel (in pixel coordinates)
         const particleData = new Float32Array(NUM_PARTICLES * 6);
         for (let i = 0; i < NUM_PARTICLES; i++) {
-            particleData[i * 6 + 0] = Math.random() * canvas.width; //PosX (pixels)
-            particleData[i * 6 + 1] = Math.random() * canvas.height; //POSY (pixels)
+            particleData[i * 6 + 0] = canvas.width / 4 + (Math.random() * canvas.width / 2); //PosX (pixels)
+            particleData[i * 6 + 1] = canvas.height / 4 + (Math.random() * canvas.height / 2); //POSY (pixels)
             particleData[i * 6 + 2] = (Math.random() - 0.5) * 100; //VelX (pixels/s)
             particleData[i * 6 + 3] = (Math.random() - 0.5) * 100; //VelY (pixels/s)
             particleData[i * 6 + 4] = Math.random(); //Life

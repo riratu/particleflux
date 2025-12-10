@@ -41,10 +41,15 @@
     let frames = 0;
     const fpsDisplay = document.getElementById('fps');
 
+    const particleSize = 4
     const count = 2000;
     const particles = [];
     let mouseX = window.innerWidth / 2;
     let mouseY = window.innerHeight / 2;
+
+    // Spatial index parameters
+    const repulsionRange = 40;
+    let spatialGrid = new Map();
 
     document.addEventListener('mousemove', (e) => {
         mouseX = e.clientX - window.innerWidth / 2;
@@ -56,7 +61,7 @@
             position: new THREE.Vector2((Math.random() - 0.5) * window.innerWidth, (Math.random() - 0.5) * window.innerHeight),
             velocity: new THREE.Vector2((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10),
             life: Math.random(),
-            size: 2
+            size: particleSize
         });
     }
 
@@ -77,20 +82,55 @@
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-    const material = new THREE.PointsMaterial({ size: 5, vertexColors: true });
+    const material = new THREE.PointsMaterial({ size: particleSize, vertexColors: true });
     const points = new THREE.Points(geometry, material);
     scene.add(points);
 
     camera.position.z = 500;
 
+    function getGridKey(x, y) {
+        const gridX = Math.floor(x / repulsionRange);
+        const gridY = Math.floor(y / repulsionRange);
+        return `${gridX},${gridY}`;
+    }
+
+    function buildSpatialGrid() {
+        spatialGrid.clear();
+        for (let i = 0; i < count; i++) {
+            const key = getGridKey(particles[i].position.x, particles[i].position.y);
+            if (!spatialGrid.has(key)) {
+                spatialGrid.set(key, []);
+            }
+            spatialGrid.get(key).push(i);
+        }
+    }
+
+    function getNearbyParticles(x, y, range) {
+        const nearby = [];
+        const gridX = Math.floor(x / repulsionRange);
+        const gridY = Math.floor(y / repulsionRange);
+        const searchRadius = Math.ceil(range / repulsionRange);
+
+        for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+            for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+                const key = `${gridX + dx},${gridY + dy}`;
+                if (spatialGrid.has(key)) {
+                    nearby.push(...spatialGrid.get(key));
+                }
+            }
+        }
+        return nearby;
+    }
+
     function particleInteractions(deltaTime) {
-        // Particle-to-particle interactions
+        const repulsionStrength = 1000.2;
+
         for (let i = 0; i < count; i++) {
             const p = particles[i];
-            const repulsionRange = (p.size + 2) * 10;
-            const repulsionStrength = 1000.2;
+            const nearby = getNearbyParticles(p.position.x, p.position.y, repulsionRange);
 
-            for (let j = i + 1; j < count; j++) {
+            for (const j of nearby) {
+                if (i >= j) continue;
                 const other = particles[j];
                 const dx = p.position.x - other.position.x;
                 const dy = p.position.y - other.position.y;
@@ -124,7 +164,6 @@
         const maxSpeed = 500;
         const damping = 0.95;
 
-        // Update velocities and positions
         for (let i = 0; i < count; i++) {
             const p = particles[i];
 
@@ -132,7 +171,6 @@
             p.position.y += p.velocity.y * deltaTime;
 
             const gravity = 500;
-            // Attraction to screen center
             const dx = center.x - p.position.x;
             const dy = center.y - p.position.y;
             const distToCenter = Math.sqrt(dx * dx + dy * dy);
@@ -155,7 +193,6 @@
 
             p.life -= deltaTime * 0.01;
 
-            //Respawn Particles
             if (p.life <= 0) {
                 p.position.set(
                     mouseX + Math.random() * 20,
@@ -168,9 +205,10 @@
                 p.life = 1;
             }
         }
+
+        buildSpatialGrid();
         particleInteractions(deltaTime);
 
-        // Update buffers
         for (let i = 0; i < count; i++) {
             pos[i * 3] = particles[i].position.x;
             pos[i * 3 + 1] = particles[i].position.y;

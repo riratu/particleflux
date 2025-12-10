@@ -158,8 +158,8 @@
             //Respawn Particles
             if (p.life <= 0) {
                 p.position.set(
-                    mouseX - (window.innerWidth / 2) + Math.random() * 20,
-                    mouseY - (window.innerHeight / 2) + Math.random() * 20
+                    mouseX + Math.random() * 20,
+                    mouseY + Math.random() * 20
                 );
                 p.velocity.set(
                     (Math.random() - 0.5) * 2,

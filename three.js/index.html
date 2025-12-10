@@ -41,20 +41,46 @@
     let frames = 0;
     const fpsDisplay = document.getElementById('fps');
 
+    const repulsionRange = 5;
     const particleSize = 4
     const count = 5000;
+    const repulsionStrength = 5000.2;
     const particles = [];
+    const center = new THREE.Vector2(0, 0);
+    const maxDistance = 500;
+    const maxSpeed = 500;
+    const damping = 0.9;
+    const gravity = 1000;
+
+
     let mouseX = window.innerWidth / 2;
     let mouseY = window.innerHeight / 2;
+    let mouseButtonsClicked = [];
 
-    // Spatial index parameters
-    const repulsionRange = 20;
+
+
     let spatialGrid = new Map();
 
     document.addEventListener('mousemove', (e) => {
         mouseX = e.clientX - window.innerWidth / 2;
         mouseY = window.innerHeight - e.clientY - window.innerHeight / 2;
     });
+
+    window.oncontextmenu = function ()
+    {
+        return false;     // cancel default menu
+    }
+
+    addEventListener("mousedown", (event) => {
+        console.log(event)
+        mouseButtonsClicked[event.button] = true
+    })
+
+
+    addEventListener("mouseup", (event) => {
+        console.log(event)
+        mouseButtonsClicked[event.button] = false
+    })
 
     for (let i = 0; i < count; i++) {
         particles.push({
@@ -124,8 +150,7 @@
 
     function particleInteractions(deltaTime) {
         let comparisons = 0;
-        const repulsionStrength = 10000.2;
-        const futureTime = deltaTime * 0.5;
+        const futureTime = deltaTime * 0.3;
 
         for (let i = 0; i < count; i++) {
             const p = particles[i];
@@ -147,7 +172,7 @@
                     if (dist < repulsionRange && dist > 0) {
                         const dirX = dx / dist;
                         const dirY = dy / dist;
-                        const force = repulsionStrength * Math.pow(1 - dist / repulsionRange, 3) * 0.45 * deltaTime;
+                        const force = repulsionStrength * Math.pow(1 - dist / repulsionRange, 2) * 0.5 * deltaTime;
                         p.velocity.x += dirX * force;
                         p.velocity.y += dirY * force;
                         other.velocity.x -= dirX * force;
@@ -156,7 +181,7 @@
                 });
             }
         }
-        console.log(comparisons);
+        //console.log(comparisons);
     }
 
     function updatePhysics(deltaTime) {
@@ -165,29 +190,51 @@
         const pos = posAttr.array;
         const col = colAttr.array;
 
-        const center = new THREE.Vector2(0, 0);
-        const maxDistance = 500;
-        const maxSpeed = 200;
-        const damping = 0.9;
-
         for (let i = 0; i < count; i++) {
             const p = particles[i];
 
             p.position.x += p.velocity.x * deltaTime;
             p.position.y += p.velocity.y * deltaTime;
 
-            const gravity = 500;
+            // Gravity
             const dx = center.x - p.position.x;
             const dy = center.y - p.position.y;
             const distToCenter = Math.sqrt(dx * dx + dy * dy);
 
-            if (distToCenter > 0) {
+            if (distToCenter > 10) {
                 const normalizedDist = Math.min(distToCenter / maxDistance, 1);
-                const forceStrength = 1000 * normalizedDist;
                 const dirX = dx / distToCenter;
                 const dirY = dy / distToCenter;
                 p.velocity.x += dirX * deltaTime * gravity;
                 p.velocity.y += dirY * deltaTime * gravity;
+            }
+
+            //Mouse Positive
+            if(mouseButtonsClicked[0]) {
+                const strength = 50000;
+                const dmx = mouseX - p.position.x;
+                const dmy = mouseY - p.position.y;
+
+                //if (distToMouse > 10) {
+                    //const dirX = dmx / distToMouse;
+                    //const dirY = dmy / distToMouse;
+                    p.velocity.x += dmx * deltaTime * strength;
+                    p.velocity.y += dmy * deltaTime * strength;
+                //}
+            }
+
+            // Mouse Negative
+            if(mouseButtonsClicked[2]) {
+                const strength = 500000;
+                const dmx = mouseX - p.position.x;
+                const dmy = mouseY - p.position.y;
+
+                //if (distToMouse > 10) {
+                //const dirX = dmx / distToMouse;
+                //const dirY = dmy / distToMouse;
+                p.velocity.x -= dmx * deltaTime * strength;
+                p.velocity.y -= dmy * deltaTime * strength;
+                //}
             }
 
             p.velocity.multiplyScalar(damping);
@@ -197,18 +244,20 @@
                 p.velocity.normalize().multiplyScalar(maxSpeed);
             }
 
-            p.life -= deltaTime * 0.01;
+            if(mouseButtonsClicked[1]) {
+                p.life -= deltaTime * 0.01;
 
-            if (p.life <= 0) {
-                p.position.set(
-                    mouseX + Math.random() * 20,
-                    mouseY + Math.random() * 20
-                );
-                p.velocity.set(
-                    (Math.random() - 0.5) * 2,
-                    (Math.random() - 0.5) * 2
-                );
-                p.life = 1;
+                if (p.life <= 0) {
+                    p.position.set(
+                        mouseX + Math.random() * 20,
+                        mouseY + Math.random() * 20
+                    );
+                    p.velocity.set(
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 2
+                    );
+                    p.life = 1;
+                }
             }
         }
 

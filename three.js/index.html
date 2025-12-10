@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>5,000 Spheres with Physics</title>
+    <title>5,000 Spheres with Physics - 3D</title>
     <style>
         body {
             margin: 0;
@@ -44,10 +44,10 @@
 
     const repulsionRange = 40;
     const particleSize = 5;
-    const count = 1000;
-    const repulsionStrength = 5000.2;
+    const count = 2000;
+    const repulsionStrength = 500.2;
     const particles = [];
-    const center = new THREE.Vector2(0, 0);
+    const center = new THREE.Vector3(0, 0, 0);
     const maxDistance = 500;
     const maxSpeed = 500;
     const damping = 0.9;
@@ -60,19 +60,19 @@
     let spatialGrid = new Map();
 
     // Add lighting
-    const ambientLight = new THREE.AmbientLight(0xfffff00, 0.5);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.1);
     scene.add(ambientLight);
 
-    const pointLight = new THREE.PointLight(0xffffff, 1, 2000);
-    pointLight.position.set(400, 200, 00);
+    const pointLight = new THREE.PointLight(0xffffff, 1, 20000);
+    pointLight.position.set(1000, 1000, 1000);
     pointLight.castShadow = true;
     scene.add(pointLight);
 
     document.addEventListener('mousemove', (e) => {
         mouseX = e.clientX - window.innerWidth / 2;
         mouseY = window.innerHeight - e.clientY - window.innerHeight / 2;
-        pointLight.position.x = mouseX;
-        pointLight.position.y = mouseY;
+        //pointLight.position.x = mouseX;
+        //pointLight.position.y = mouseY;
     });
 
     window.oncontextmenu = function () {
@@ -88,11 +88,11 @@
     })
 
     // Create sphere geometry and material
-    const sphereGeometry = new THREE.SphereGeometry(particleSize, 4, 4);
+    const sphereGeometry = new THREE.SphereGeometry(particleSize, 8, 8);
     const sphereMaterial = new THREE.MeshStandardMaterial({
         color: 0x4488ff,
-        metalness: 0.7,
-        roughness: 0.2,
+        metalness: 0.1,
+        roughness: 0.9,
         emissive: 0x001155
     });
 
@@ -100,8 +100,16 @@
 
     for (let i = 0; i < count; i++) {
         particles.push({
-            position: new THREE.Vector2((Math.random() - 0.5) * window.innerWidth, (Math.random() - 0.5) * window.innerHeight),
-            velocity: new THREE.Vector2((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10),
+            position: new THREE.Vector3(
+                (Math.random() - 0.5) * window.innerWidth,
+                (Math.random() - 0.5) * window.innerHeight,
+                (Math.random() - 0.5) * 500
+            ),
+            velocity: new THREE.Vector3(
+                (Math.random() - 0.5) * 10,
+                (Math.random() - 0.5) * 10,
+                (Math.random() - 0.5) * 10
+            ),
             life: Math.random(),
             size: particleSize
         });
@@ -109,26 +117,25 @@
         const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial.clone());
         sphere.castShadow = true;
         sphere.receiveShadow = true;
-        sphere.position.z = 0;
         scene.add(sphere);
         spheres.push(sphere);
 
-        // Vary color based on life
         sphere.material.color.setHSL(0.6, 0.8, 0.5);
     }
 
     camera.position.z = 500;
 
-    function getGridKey(x, y) {
+    function getGridKey(x, y, z) {
         const gridX = Math.floor(x / repulsionRange);
         const gridY = Math.floor(y / repulsionRange);
-        return `${gridX},${gridY}`;
+        const gridZ = Math.floor(z / repulsionRange);
+        return `${gridX},${gridY},${gridZ}`;
     }
 
     function buildSpatialGrid() {
         spatialGrid.clear();
         for (let i = 0; i < count; i++) {
-            const key = getGridKey(particles[i].position.x, particles[i].position.y);
+            const key = getGridKey(particles[i].position.x, particles[i].position.y, particles[i].position.z);
             if (!spatialGrid.has(key)) {
                 spatialGrid.set(key, []);
             }
@@ -136,17 +143,20 @@
         }
     }
 
-    function getNearbyCells(x, y) {
+    function getNearbyCells(x, y, z) {
         const searchCells = [];
         const gridX = Math.floor(x / repulsionRange);
         const gridY = Math.floor(y / repulsionRange);
+        const gridZ = Math.floor(z / repulsionRange);
         const searchRadius = 1;
 
         for (let dx = -searchRadius; dx <= searchRadius; dx++) {
             for (let dy = -searchRadius; dy <= searchRadius; dy++) {
-                const key = `${gridX + dx},${gridY + dy}`;
-                if (spatialGrid.has(key)) {
-                    searchCells.push(key);
+                for (let dz = -searchRadius; dz <= searchRadius; dz++) {
+                    const key = `${gridX + dx},${gridY + dy},${gridZ + dz}`;
+                    if (spatialGrid.has(key)) {
+                        searchCells.push(key);
+                    }
                 }
             }
         }
@@ -160,7 +170,8 @@
             const p = particles[i];
             const futureX = p.position.x + p.velocity.x * futureTime;
             const futureY = p.position.y + p.velocity.y * futureTime;
-            const nearbyCells = getNearbyCells(futureX, futureY);
+            const futureZ = p.position.z + p.velocity.z * futureTime;
+            const nearbyCells = getNearbyCells(futureX, futureY, futureZ);
 
             for (const cellKey of nearbyCells) {
                 const cell = spatialGrid.get(cellKey);
@@ -170,16 +181,20 @@
                     const other = particles[otherNo];
                     const dx = futureX - other.position.x;
                     const dy = futureY - other.position.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const dz = futureZ - other.position.z;
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
                     if (dist < repulsionRange && dist > 0) {
                         const dirX = dx / dist;
                         const dirY = dy / dist;
+                        const dirZ = dz / dist;
                         const force = repulsionStrength * Math.pow(1 - dist / repulsionRange, 2) * 0.5 * deltaTime;
                         p.velocity.x += dirX * force;
                         p.velocity.y += dirY * force;
+                        p.velocity.z += dirZ * force;
                         other.velocity.x -= dirX * force;
                         other.velocity.y -= dirY * force;
+                        other.velocity.z -= dirZ * force;
                     }
                 });
             }
@@ -192,16 +207,20 @@
 
             p.position.x += p.velocity.x * deltaTime;
             p.position.y += p.velocity.y * deltaTime;
+            p.position.z += p.velocity.z * deltaTime;
 
             const dx = center.x - p.position.x;
             const dy = center.y - p.position.y;
-            const distToCenter = Math.sqrt(dx * dx + dy * dy);
+            const dz = center.z - p.position.z;
+            const distToCenter = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
             if (distToCenter > 10) {
                 const dirX = dx / distToCenter;
                 const dirY = dy / distToCenter;
+                const dirZ = dz / distToCenter;
                 p.velocity.x += dirX * deltaTime * gravity;
                 p.velocity.y += dirY * deltaTime * gravity;
+                p.velocity.z += dirZ * deltaTime * gravity;
             }
 
             if(mouseButtonsClicked[0]) {
@@ -233,9 +252,11 @@
                 if (p.life <= 0) {
                     p.position.set(
                         mouseX + Math.random() * 20,
-                        mouseY + Math.random() * 20
+                        mouseY + Math.random() * 20,
+                        (Math.random() - 0.5) * 100
                     );
                     p.velocity.set(
+                        (Math.random() - 0.5) * 2,
                         (Math.random() - 0.5) * 2,
                         (Math.random() - 0.5) * 2
                     );
@@ -243,9 +264,7 @@
                 }
             }
 
-            // Update sphere position and color
-            spheres[i].position.x = p.position.x;
-            spheres[i].position.y = p.position.y;
+            spheres[i].position.copy(p.position);
             spheres[i].material.color.setHSL(0.6, 0.8, 0.3 + p.life * 0.4);
         }
 

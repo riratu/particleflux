@@ -42,13 +42,13 @@
     const fpsDisplay = document.getElementById('fps');
 
     const particleSize = 4
-    const count = 2000;
+    const count = 5000;
     const particles = [];
     let mouseX = window.innerWidth / 2;
     let mouseY = window.innerHeight / 2;
 
     // Spatial index parameters
-    const repulsionRange = 40;
+    const repulsionRange = 20;
     let spatialGrid = new Map();
 
     document.addEventListener('mousemove', (e) => {
@@ -105,52 +105,58 @@
         }
     }
 
-    function getNearbyParticles(x, y, range) {
-        const nearby = [];
+    function getNearbyCells(x, y) {
+        const searchCells = [];
         const gridX = Math.floor(x / repulsionRange);
         const gridY = Math.floor(y / repulsionRange);
-        const searchRadius = Math.ceil(range / repulsionRange);
+        const searchRadius = 1;
 
         for (let dx = -searchRadius; dx <= searchRadius; dx++) {
             for (let dy = -searchRadius; dy <= searchRadius; dy++) {
                 const key = `${gridX + dx},${gridY + dy}`;
                 if (spatialGrid.has(key)) {
-                    nearby.push(...spatialGrid.get(key));
+                    searchCells.push(key);
                 }
             }
         }
-        return nearby;
+        return searchCells;
     }
 
     function particleInteractions(deltaTime) {
-        const repulsionStrength = 1000.2;
+        let comparisons = 0;
+        const repulsionStrength = 10000.2;
+        const futureTime = deltaTime * 0.5;
 
         for (let i = 0; i < count; i++) {
             const p = particles[i];
-            const nearby = getNearbyParticles(p.position.x, p.position.y, repulsionRange);
+            const futureX = p.position.x + p.velocity.x * futureTime;
+            const futureY = p.position.y + p.velocity.y * futureTime;
+            const nearbyCells = getNearbyCells(futureX, futureY);
 
-            for (const j of nearby) {
-                if (i >= j) continue;
-                const other = particles[j];
-                const dx = p.position.x - other.position.x;
-                const dy = p.position.y - other.position.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
+            for (const cellKey of nearbyCells) {
+                const cell = spatialGrid.get(cellKey);
+                if (!cell) debugger;
 
-                if (dist < repulsionRange && dist > 0) {
-                    const dirX = dx / dist;
-                    const dirY = dy / dist;
+                cell.forEach(otherNo => {
+                    comparisons++;
+                    const other = particles[otherNo];
+                    const dx = futureX - other.position.x;
+                    const dy = futureY - other.position.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
 
-                    const normalizedDist = dist / repulsionRange;
-                    const forceMagnitude = repulsionStrength * Math.pow(1.0 - normalizedDist, 3.0);
-
-                    p.velocity.x += dirX * forceMagnitude * 0.5 * deltaTime;
-                    p.velocity.y += dirY * forceMagnitude * 0.5 * deltaTime;
-
-                    other.velocity.x -= dirX * forceMagnitude * 0.5 * deltaTime;
-                    other.velocity.y -= dirY * forceMagnitude * 0.5 * deltaTime;
-                }
+                    if (dist < repulsionRange && dist > 0) {
+                        const dirX = dx / dist;
+                        const dirY = dy / dist;
+                        const force = repulsionStrength * Math.pow(1 - dist / repulsionRange, 3) * 0.45 * deltaTime;
+                        p.velocity.x += dirX * force;
+                        p.velocity.y += dirY * force;
+                        other.velocity.x -= dirX * force;
+                        other.velocity.y -= dirY * force;
+                    }
+                });
             }
         }
+        console.log(comparisons);
     }
 
     function updatePhysics(deltaTime) {
@@ -161,8 +167,8 @@
 
         const center = new THREE.Vector2(0, 0);
         const maxDistance = 500;
-        const maxSpeed = 500;
-        const damping = 0.95;
+        const maxSpeed = 200;
+        const damping = 0.9;
 
         for (let i = 0; i < count; i++) {
             const p = particles[i];

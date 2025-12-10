@@ -51,33 +51,8 @@ fn hslToRgb(h: f32, s: f32, l: f32) -> vec3<f32> {
 fn vs_main(in: VertexInput, @builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instanceIndex: u32) -> VertexOutput {
     var out: VertexOutput;
 
-    // Define quad vertices (two triangles forming a square)
-    var vertices = array<vec2<f32>, 6>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>( 1.0, -1.0),
-        vec2<f32>( 1.0,  1.0),
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>( 1.0,  1.0),
-        vec2<f32>(-1.0,  1.0)
-    );
-
-    var uvs = array<vec2<f32>, 6>(
-        vec2<f32>(0.0, 0.0),
-        vec2<f32>(1.0, 0.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(0.0, 0.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(0.0, 1.0)
-    );
-
-    let quadVertex = vertices[vertexIndex];
-    out.uv = uvs[vertexIndex];
-
-    // Scale quad by particle size (in.size is now in pixels)
-    let pixelPos = quadVertex * in.size;
-
-    // Particle position is in pixels, add the quad offset
-    let screenPos = in.position + pixelPos;
+    // Particle position is in pixels
+    let screenPos = in.position;
 
     // Convert pixel coordinates to clip space [-1, 1]
     let clipX = (screenPos.x / uniforms.screenWidth) * 2.0 - 1.0;
@@ -93,7 +68,7 @@ fn vs_main(in: VertexInput, @builtin(vertex_index) vertexIndex: u32, @builtin(in
 
     let hue = normalizedSpeed + 0.5;
     let saturation = 0.5;
-    let lightness = 0.4;
+    let lightness = 0.9;
 
     let rgb = hslToRgb(hue, saturation, lightness);
     out.color = vec4<f32>(rgb, 1.0);
@@ -103,23 +78,5 @@ fn vs_main(in: VertexInput, @builtin(vertex_index) vertexIndex: u32, @builtin(in
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var color = in.color;
-
-    // Calculate distance from center (UV space: 0.5, 0.5)
-    var center = vec2<f32>(0.5);
-    var dist = length(in.uv - center);
-
-    // Discard fragments outside the circle
-    if dist > 0.5 {
-        discard;
-    }
-
-    // Smooth edge for anti-aliasing
-    color.a *= smoothstep(0.5, 0.4, dist);
-
-    return color;
+    return in.color;
 }
-
-
-
-

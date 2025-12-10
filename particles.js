@@ -1,4 +1,4 @@
-const NUM_PARTICLES = 500;
+const NUM_PARTICLES = 1000;
 
 let mouseX = 0;
 let mouseY = 0;
@@ -123,7 +123,7 @@ async function main() {
                 targets: [{ format }],
             },
             primitive: {
-                topology: 'triangle-list',
+                topology: 'point-list',
             },
         });
 

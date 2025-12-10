@@ -60,7 +60,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
    // p.velocity += gravity * uniforms.deltaTime;
 
     // Apply damping (friction) to make this wohle circus a little quieter
-    p.velocity *= 0.999; // 2% velocity loss per frame
+    p.velocity *= 0.99; // 2% velocity loss per frame
 
 
     // Clamp velocity to prevent excessive speed
@@ -99,7 +99,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
 
     // We calculate the Position a little to in the Future since there is some time left between frames.
-    let futurePos = p.position + normalize(p.velocity) * 1;
+    let futurePos = p.position + normalize(p.velocity) * 0.1;
 
     // Interactions with other Particles.
     let particleCount = arrayLength(&particles);

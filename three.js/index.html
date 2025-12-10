@@ -23,7 +23,7 @@
             background: rgba(0, 0, 0, 0.7);
             padding: 10px;
             border-radius: 5px;
-        }a
+        }
     </style>
 </head>
 <body>
@@ -37,25 +37,20 @@
     renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
 
-    // FPS counter
     let lastTime = performance.now();
     let frames = 0;
     const fpsDisplay = document.getElementById('fps');
 
-    // Particle system
-    const count = 50000;
+    const count = 2000;
     const particles = [];
     let mouseX = window.innerWidth / 2;
     let mouseY = window.innerHeight / 2;
 
-    // Track mouse
     document.addEventListener('mousemove', (e) => {
-        mouseX = e.clientX;
-        mouseY = window.innerHeight - e.clientY; // Invert Y axis
+        mouseX = e.clientX - window.innerWidth / 2;
+        mouseY = window.innerHeight - e.clientY - window.innerHeight / 2;
     });
 
-
-    // Initialize particles
     for (let i = 0; i < count; i++) {
         particles.push({
             position: new THREE.Vector2((Math.random() - 0.5) * window.innerWidth, (Math.random() - 0.5) * window.innerHeight),
@@ -65,7 +60,6 @@
         });
     }
 
-    // Create geometry
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
@@ -89,7 +83,36 @@
 
     camera.position.z = 500;
 
-    // Physics update
+    function particleInteractions(deltaTime) {
+        // Particle-to-particle interactions
+        for (let i = 0; i < count; i++) {
+            const p = particles[i];
+            const repulsionRange = (p.size + 2) * 10;
+            const repulsionStrength = 1000.2;
+
+            for (let j = i + 1; j < count; j++) {
+                const other = particles[j];
+                const dx = p.position.x - other.position.x;
+                const dy = p.position.y - other.position.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < repulsionRange && dist > 0) {
+                    const dirX = dx / dist;
+                    const dirY = dy / dist;
+
+                    const normalizedDist = dist / repulsionRange;
+                    const forceMagnitude = repulsionStrength * Math.pow(1.0 - normalizedDist, 3.0);
+
+                    p.velocity.x += dirX * forceMagnitude * 0.5 * deltaTime;
+                    p.velocity.y += dirY * forceMagnitude * 0.5 * deltaTime;
+
+                    other.velocity.x -= dirX * forceMagnitude * 0.5 * deltaTime;
+                    other.velocity.y -= dirY * forceMagnitude * 0.5 * deltaTime;
+                }
+            }
+        }
+    }
+
     function updatePhysics(deltaTime) {
         const posAttr = geometry.getAttribute('position');
         const colAttr = geometry.getAttribute('color');
@@ -99,15 +122,16 @@
         const center = new THREE.Vector2(0, 0);
         const maxDistance = 500;
         const maxSpeed = 500;
-        const damping = 0.99;
+        const damping = 0.95;
 
+        // Update velocities and positions
         for (let i = 0; i < count; i++) {
             const p = particles[i];
 
-            // Movement
             p.position.x += p.velocity.x * deltaTime;
             p.position.y += p.velocity.y * deltaTime;
 
+            const gravity = 500;
             // Attraction to screen center
             const dx = center.x - p.position.x;
             const dy = center.y - p.position.y;
@@ -115,63 +139,50 @@
 
             if (distToCenter > 0) {
                 const normalizedDist = Math.min(distToCenter / maxDistance, 1);
-                const forceStrength = 1000 * Math.pow(normalizedDist, 2);
+                const forceStrength = 1000 * normalizedDist;
                 const dirX = dx / distToCenter;
                 const dirY = dy / distToCenter;
-                p.velocity.x += dirX * forceStrength * deltaTime;
-                p.velocity.y += dirY * forceStrength * deltaTime;
+                p.velocity.x += dirX * deltaTime * gravity;
+                p.velocity.y += dirY * deltaTime * gravity;
             }
 
-            // Damping
             p.velocity.multiplyScalar(damping);
 
-            // Speed limit
             const speed = p.velocity.length();
             if (speed > maxSpeed) {
                 p.velocity.normalize().multiplyScalar(maxSpeed);
             }
 
-            // Age particles
-            p.life -= deltaTime * 0.1;
+            p.life -= deltaTime * 0.01;
 
-            // Recycle dead particles
-            if (p.life <= 0) {
-                const randomSpread = 50;
-                p.position.set(
-                    mouseX - (window.innerWidth / 2), // * (Math.random() - 0.5) + randomSpread,
-                    mouseY - (window.innerHeight / 2) // * (Math.random() - 0.5) + randomSpread
-                );
-                p.velocity.set(
-                    (Math.random() - 0.5) * 200,
-                    (Math.random() - 0.5) * 200
-                );
-                p.life = 1;
-            }
-
-            // Boundary bounce
-            // if (p.position.x < -1 || p.position.x > window.innerWidth) {
-            //     p.velocity.x = -p.velocity.x;
-            //     p.position.x = Math.max(0, Math.min(window.innerWidth, p.position.x));
+            //Respawn Particles
+            // if (p.life <= 0) {
+            //     p.position.set(
+            //         mouseX - (window.innerWidth / 2) + Math.random() * 20,
+            //         mouseY - (window.innerHeight / 2) + Math.random() * 20
+            //     );
+            //     p.velocity.set(
+            //         (Math.random() - 0.5) * 2,
+            //         (Math.random() - 0.5) * 2
+            //     );
+            //     p.life = 1;
             // }
-            // if (p.position.y < -1 || p.position.y > window.innerHeight) {
-            //     p.velocity.y = -p.velocity.y;
-            //     p.position.y = Math.max(0, Math.min(window.innerHeight, p.position.y));
-            // }
+        }
+        particleInteractions(deltaTime);
 
-            // Update buffer
-            pos[i * 3] = p.position.x;
-            pos[i * 3 + 1] = p.position.y;
+        // Update buffers
+        for (let i = 0; i < count; i++) {
+            pos[i * 3] = particles[i].position.x;
+            pos[i * 3 + 1] = particles[i].position.y;
 
-            col[i * 3] = p.life;
-            col[i * 3 + 1] = 0.5 + p.life * 0.5;
-            col[i * 3 + 2] = 1 - p.life;
+            col[i * 3] = particles[i].life;
+            col[i * 3 + 1] = 0.5 + particles[i].life * 0.5;
+            col[i * 3 + 2] = 1 - particles[i].life;
         }
 
         posAttr.needsUpdate = true;
         colAttr.needsUpdate = true;
     }
-
-
 
     let lastFrameTime = performance.now();
 
@@ -185,7 +196,6 @@
         updatePhysics(deltaTime);
         renderer.render(scene, camera);
 
-        // Update FPS
         frames++;
         if (now >= lastTime + 1000) {
             fpsDisplay.textContent = `FPS: ${frames}`;

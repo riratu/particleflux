@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>50,000 Points with Three.js</title>
+    <title>50,000 Points with Physics</title>
     <style>
         body {
             margin: 0;
@@ -23,11 +23,11 @@
             background: rgba(0, 0, 0, 0.7);
             padding: 10px;
             border-radius: 5px;
-        }
+        }a
     </style>
 </head>
 <body>
-<div id="fps">FPS: NAAAN</div>
+<div id="fps">FPS: 0</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
     const scene = new THREE.Scene();
@@ -42,63 +42,163 @@
     let frames = 0;
     const fpsDisplay = document.getElementById('fps');
 
+    // Particle system
+    const count = 50000;
+    const particles = [];
+    let mouseX = window.innerWidth / 2;
+    let mouseY = window.innerHeight / 2;
+
+    // Track mouse
+    document.addEventListener('mousemove', (e) => {
+        mouseX = e.clientX;
+        mouseY = window.innerHeight - e.clientY; // Invert Y axis
+    });
+
+
+    // Initialize particles
+    for (let i = 0; i < count; i++) {
+        particles.push({
+            position: new THREE.Vector2((Math.random() - 0.5) * window.innerWidth, (Math.random() - 0.5) * window.innerHeight),
+            velocity: new THREE.Vector2((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10),
+            life: Math.random(),
+            size: 2
+        });
+    }
+
     // Create geometry
     const geometry = new THREE.BufferGeometry();
-    const count = 3000000;
     const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
 
-    // Generate random points
-    for (let i = 0; i < count * 3; i += 3) {
-        positions[i] = (Math.random() - 0.5) * 200;
-        positions[i + 1] = (Math.random() - 0.5) * 200;
-        positions[i + 2] = (Math.random() - 0.5) * 10;
+    for (let i = 0; i < count; i++) {
+        positions[i * 3] = particles[i].position.x;
+        positions[i * 3 + 1] = particles[i].position.y;
+        positions[i * 3 + 2] = 0;
+
+        colors[i * 3] = particles[i].life;
+        colors[i * 3 + 1] = 0.5 + particles[i].life * 0.5;
+        colors[i * 3 + 2] = 1 - particles[i].life;
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-    // Create material and points
-    const material = new THREE.PointsMaterial({ color: 0x00ff00, size: 0.01 });
+    const material = new THREE.PointsMaterial({ size: 5, vertexColors: true });
     const points = new THREE.Points(geometry, material);
     scene.add(points);
 
-    camera.position.z = 100;
+    camera.position.z = 500;
 
-    // Handle window resize
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    // Physics update
+    function updatePhysics(deltaTime) {
+        const posAttr = geometry.getAttribute('position');
+        const colAttr = geometry.getAttribute('color');
+        const pos = posAttr.array;
+        const col = colAttr.array;
 
-    // Animation loop
+        const center = new THREE.Vector2(0, 0);
+        const maxDistance = 500;
+        const maxSpeed = 500;
+        const damping = 0.99;
+
+        for (let i = 0; i < count; i++) {
+            const p = particles[i];
+
+            // Movement
+            p.position.x += p.velocity.x * deltaTime;
+            p.position.y += p.velocity.y * deltaTime;
+
+            // Attraction to screen center
+            const dx = center.x - p.position.x;
+            const dy = center.y - p.position.y;
+            const distToCenter = Math.sqrt(dx * dx + dy * dy);
+
+            if (distToCenter > 0) {
+                const normalizedDist = Math.min(distToCenter / maxDistance, 1);
+                const forceStrength = 1000 * Math.pow(normalizedDist, 2);
+                const dirX = dx / distToCenter;
+                const dirY = dy / distToCenter;
+                p.velocity.x += dirX * forceStrength * deltaTime;
+                p.velocity.y += dirY * forceStrength * deltaTime;
+            }
+
+            // Damping
+            p.velocity.multiplyScalar(damping);
+
+            // Speed limit
+            const speed = p.velocity.length();
+            if (speed > maxSpeed) {
+                p.velocity.normalize().multiplyScalar(maxSpeed);
+            }
+
+            // Age particles
+            p.life -= deltaTime * 0.1;
+
+            // Recycle dead particles
+            if (p.life <= 0) {
+                const randomSpread = 50;
+                p.position.set(
+                    mouseX - (window.innerWidth / 2), // * (Math.random() - 0.5) + randomSpread,
+                    mouseY - (window.innerHeight / 2) // * (Math.random() - 0.5) + randomSpread
+                );
+                p.velocity.set(
+                    (Math.random() - 0.5) * 200,
+                    (Math.random() - 0.5) * 200
+                );
+                p.life = 1;
+            }
+
+            // Boundary bounce
+            // if (p.position.x < -1 || p.position.x > window.innerWidth) {
+            //     p.velocity.x = -p.velocity.x;
+            //     p.position.x = Math.max(0, Math.min(window.innerWidth, p.position.x));
+            // }
+            // if (p.position.y < -1 || p.position.y > window.innerHeight) {
+            //     p.velocity.y = -p.velocity.y;
+            //     p.position.y = Math.max(0, Math.min(window.innerHeight, p.position.y));
+            // }
+
+            // Update buffer
+            pos[i * 3] = p.position.x;
+            pos[i * 3 + 1] = p.position.y;
+
+            col[i * 3] = p.life;
+            col[i * 3 + 1] = 0.5 + p.life * 0.5;
+            col[i * 3 + 2] = 1 - p.life;
+        }
+
+        posAttr.needsUpdate = true;
+        colAttr.needsUpdate = true;
+    }
+
+
+
+    let lastFrameTime = performance.now();
+
     function animate() {
         requestAnimationFrame(animate);
 
-        // Move points every frame
-        const positionAttribute = geometry.getAttribute('position');
-        const pos = positionAttribute.array;
+        const now = performance.now();
+        const deltaTime = (now - lastFrameTime) / 1000;
+        lastFrameTime = now;
 
-        for (let i = 0; i < pos.length; i += 3) {
-            pos[i] += (Math.random()) * 0.1;
-            pos[i + 1] += (Math.random()) * 0.1;
-            pos[i + 2] += (Math.random()) * 0.1;
-        }
-
-        positionAttribute.needsUpdate = true;
-
-        //points.rotation.x += 0.0005;
-        //spoints.rotation.y += 0.0005;
+        updatePhysics(deltaTime);
         renderer.render(scene, camera);
 
         // Update FPS
         frames++;
-        const now = performance.now();
         if (now >= lastTime + 1000) {
             fpsDisplay.textContent = `FPS: ${frames}`;
             frames = 0;
             lastTime = now;
         }
     }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
 
     animate();
 </script>

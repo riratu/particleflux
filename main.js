@@ -3,7 +3,10 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'dat.gui'
 import {RectAreaLightUniformsLib} from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import {RectAreaLightHelper} from 'three/addons/helpers/RectAreaLightHelper.js';
-import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {BloomPass} from 'three/addons/postprocessing/BloomPass.js';
+import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -20,7 +23,7 @@ const fpsDisplay = document.getElementById('fps');
 
 let controls= {
     repulsionRange: 150,
-    particleSize: 7,
+    particleSize: 2,
     repulsionStrength: 100.2,
     gravity: 1000,
     particleCount: 1000
@@ -43,11 +46,11 @@ let mouseButtonsClicked = [];
 let spatialGrid = new Map();
 
 // Add lighting
-// const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
-// scene.add(ambientLight);
-
-const ambientLight = new THREE.AmbientLight(0xffffff, 3);
+const ambientLight = new THREE.AmbientLight(0xffffff, 5);
 scene.add(ambientLight);
+//
+// const ambientLight = new THREE.AmbientLight(0xffffff, 3);
+// scene.add(ambientLight);
 
 // const pointLight = new THREE.PointLight(0xffffff, 100000, 0);
 // pointLight.position.set(200, 200, 100);
@@ -61,7 +64,7 @@ scene.add(ambientLight);
 // scene.add(pointLight2);
 
 const color = 0xFFFFFF;
-const intensity = 100;
+const intensity = 10;
 const width = 5;
 const height = 300;
 const light = new THREE.RectAreaLight(color, intensity, width, height);
@@ -89,12 +92,6 @@ cubeFolder.open()
 // cameraFolder.add(camera.position, 'z', 0, 10)
 // cameraFolder.open()
 
-// const postProcessing = new THREE.PostProcessing( renderer );
-// const scenePass = pass( scene, camera );
-// const scenePassColor = scenePass.getTextureNode( 'output' );
-// const bloomPass = bloom( scenePassColor );
-// postProcessing.outputNode = scenePassColor.add( bloomPass );
-
 document.addEventListener('mousemove', (e) => {
     mouseX = e.clientX - window.innerWidth / 2;
     mouseY = window.innerHeight - e.clientY - window.innerHeight / 2;
@@ -114,22 +111,52 @@ addEventListener("mouseup", (event) => {
     mouseButtonsClicked[event.button] = false
 })
 
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new BloomPass(
+    10000,    // strength
+    5000,  // kernel size
+    5100,    // sigma ?
+    1000,  // blur render target resolution
+);
+composer.addPass(bloomPass);
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
+
+
 // Create sphere geometry and material
-const sphereGeometry = new THREE.SphereGeometry(controls.particleSize, 5, 5);
-const sphereMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff,
-    metalness: 0,
+const sphereGeometry = new THREE.SphereGeometry(controls.particleSize, 9, 9);
+// const sphereMaterial = new THREE.MeshPhysicalMaterial({
+//     color: 0xffffff,
+//     metalness: 0,
+//     roughness: 0.9,
+//     transmission: 0.9,        // Glass transparency
+//     emissive: 0x3c3c3c,
+//     //thickness: 0.5,         // Refraction depth
+//     //clearcoat: 0.5,           // Glossy coating
+//     //clearcoatRoughness: 0,
+//     //ior: 1.5,               // Index of refraction (glass)
+//     reflectivity: 0.5
+//     //envMapIntensity: 1
+// });
+
+// Load texture
+//const textureLoader = new THREE.TextureLoader();
+//const moonTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js/examples/textures/planets/moon_1024.jpg');
+
+const sphereMaterial = new THREE.MeshStandardMaterial({
+    // map: moonTexture,
+    // aoMap: moonTexture,       // Use same texture for AO
+  //  aoMapIntensity: 1.5,       // Darken crevices
     roughness: 0.9,
-    transmission: 0.9,        // Glass transparency
-   // emissive: 0x3c3c3c,
-    //thickness: 0.5,         // Refraction depth
-    //clearcoat: 0.5,           // Glossy coating
-    //clearcoatRoughness: 0,
-    //ior: 1.5,               // Index of refraction (glass)
-    reflectivity: 0.9,
-    //envMapIntensity: 1
+    metalness: 0.1,
+    //emissive: 0xFFFFFF,
+    // bumpMap: moonTexture,      // Add surface depth
+    // bumpScale: 0.05            // Adjust bump intensity
 });
 
+// Note: aoMap requires UV2 coordinates
+//sphereGeometry.setAttribute('uv2', sphereGeometry.attributes.uv);
 
 const spheres = [];
 

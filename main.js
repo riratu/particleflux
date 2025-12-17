@@ -3,6 +3,10 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'dat.gui'
 import {RectAreaLightUniformsLib} from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import {RectAreaLightHelper} from 'three/addons/helpers/RectAreaLightHelper.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -40,8 +44,8 @@ const light = new THREE.RectAreaLight(color, intensity, width, height);
 light.position.set(0, 50, 0);
 scene.add(light);
 
-const helper = new RectAreaLightHelper(light);
-scene.add(helper);
+// const helper = new RectAreaLightHelper(light);
+// scene.add(helper);
 
 // GUI is initialized after forceControls is defined to avoid TDZ errors
 
@@ -74,28 +78,29 @@ let otherPositions;
 let otherColors;
 
 const particleTypes = {
-    RED: { color: 0xFF0000, id: 0 },
-    GREEN: { color: 0x00FF00, id: 1 },
-    BLUE: { color: 0x0000FF, id: 2 }
+    RED: { color: 0xFFAAAA, id: 0 },    // Desaturated light red
+    GREEN: { color: 0xAAFFAA, id: 1 },  // Desaturated light green
+    BLUE: { color: 0xAAAAFF, id: 2 }    // Desaturated light blue
 };
 
 // Bidirectional controls: allow asymmetric interactions, e.g., RED attracts GREEN
 const forces = {
-    'RED-RED': 29,
-    'RED-GREEN': -1, // RED attracts GREEN
-    'RED-BLUE': -1,
-    'GREEN-GREEN': 5,
-    'GREEN-RED': 0,  // GREEN does not attract RED
-    'GREEN-BLUE': 1,
-    'BLUE-BLUE': 5,
-    'BLUE-RED': 0 // example asymmetry placeholder
+    'RED-RED': 2,
+    'RED-GREEN': -1.4, // RED attracts GREEN
+    'RED-BLUE': 9.1,
+    'GREEN-RED': 12.3,
+    'GREEN-GREEN': -0.1,
+    'GREEN-BLUE': 9.4,
+    'BLUE-RED': 18.1,
+    'BLUE-BLUE': 18.1,
+    'BLUE-GREEN': 15,
 };
 
 let forceControls = {
     repulsionRange: 150,
     particleSize: 2,
     repulsionStrength: 100.2,
-    gravity: 10,
+    gravity: 400,
     particleCount: 1000,
     'RED-RED': 2,
     'RED-GREEN': 0,
@@ -105,7 +110,7 @@ let forceControls = {
     'GREEN-BLUE': 0,
     'BLUE-BLUE': 2,
     'BLUE-RED': 0.5,
-    'BLUE-GREEN': 0
+    'BLUE-GREEN': 0,
 };
 
 // Update GUI
@@ -125,7 +130,21 @@ forcesFolder.add(forceControls, 'GREEN-RED', -2, 22, 0.1).onChange(() => forces[
 forcesFolder.add(forceControls, 'GREEN-GREEN', -2, 22, 0.1).onChange(() => forces['GREEN-GREEN'] = forceControls['GREEN-GREEN']);
 forcesFolder.add(forceControls, 'GREEN-BLUE', -2, 22, 0.1).onChange(() => forces['GREEN-BLUE'] = forceControls['GREEN-BLUE']);
 forcesFolder.add(forceControls, 'BLUE-RED', -2, 22, 0.1).onChange(() => forces['BLUE-RED'] = forceControls['BLUE-RED']);
+forcesFolder.add(forceControls, 'BLUE-BLUE', -2, 22, 0.1).onChange(() => forces['BLUE-BLUE'] = forceControls['BLUE-BLUE']);
+forcesFolder.add(forceControls, 'BLUE-GREEN', -2, 22, 0.1).onChange(() => forces['BLUE-GREEN'] = forceControls['BLUE-GREEN']);
 forcesFolder.open();
+
+// const bokehFolder = gui.addFolder('Bokeh');
+// bokehFolder.add(forceControls, 'bokehFocus', 0, 10000).onChange(() => {
+//     bokehPass.uniforms['focus'].value = forceControls.bokehFocus;
+// });
+// bokehFolder.add(forceControls, 'bokehAperture', 0, 10).onChange(() => {
+//     bokehPass.uniforms['aperture'].value = forceControls.bokehAperture * 0.00001;
+// });
+// bokehFolder.add(forceControls, 'bokehMaxblur', 0, 0.1).onChange(() => {
+//     bokehPass.uniforms['maxblur'].value = forceControls.bokehMaxblur;
+// });
+// bokehFolder.open();
 
 cubeFolder.open();
 
@@ -223,7 +242,9 @@ const otherMaterial = new THREE.PointsMaterial({
     vertexColors: true,
     transparent: true,
     opacity: 0.8,
-    sizeAttenuation: true
+    sizeAttenuation: true,
+    alphaTest: 0.01,
+    depthWrite: false
 });
 
 const redMaterial = new THREE.PointsMaterial({
@@ -252,6 +273,26 @@ scene.add(otherSystem);
 scene.add(redSystem);
 
 camera.position.z = 500;
+
+// Setup bloom post-processing
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    3.0,  // strength
+    1.0,  // radius
+    0.0   // threshold (0 = bloom everything)
+);
+composer.addPass(bloomPass);
+
+// const bokehPass = new BokehPass( scene, camera, {
+//     focus: forceControls.bokehFocus,
+//     aperture: forceControls.bokehAperture,
+//     maxblur: forceControls.bokehMaxblur
+// } );
+// composer.addPass( bokehPass );
 
 function getGridKey(x, y, z) {
     const gridX = Math.floor(x / forceControls.repulsionRange);
@@ -425,7 +466,7 @@ function animate() {
     lastFrameTime = now;
 
     updatePhysics(deltaTime);
-    renderer.render(scene, camera);
+    composer.render();
     RectAreaLightUniformsLib.init();
 
     frames++;
@@ -440,6 +481,7 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 animate();

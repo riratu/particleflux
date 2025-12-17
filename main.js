@@ -3,10 +3,6 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'dat.gui'
 import {RectAreaLightUniformsLib} from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import {RectAreaLightHelper} from 'three/addons/helpers/RectAreaLightHelper.js';
-import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
-import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
-import {BloomPass} from 'three/addons/postprocessing/BloomPass.js';
-import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -14,7 +10,6 @@ const renderer = new THREE.WebGLRenderer({antialias: true});
 const oControls = new OrbitControls(camera, renderer.domElement);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
-renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
 
 let lastTime = performance.now();
@@ -26,42 +21,22 @@ let controls= {
     particleSize: 2,
     repulsionStrength: 100.2,
     gravity: 1000,
-    particleCount: 1000
+    particleCount: 4000
 }
 
-//const repulsionRange = 150;
-//const particleSize = 7;
-const count = 1000;
 const particles = [];
 const center = new THREE.Vector3(0, 0, 0);
 const maxDistance = 500;
 const maxSpeed = 500;
 const damping = 0.9;
 
-
 let mouseX = window.innerWidth / 2;
 let mouseY = window.innerHeight / 2;
 let mouseButtonsClicked = [];
-
 let spatialGrid = new Map();
 
-// Add lighting
 const ambientLight = new THREE.AmbientLight(0xffffff, 5);
 scene.add(ambientLight);
-//
-// const ambientLight = new THREE.AmbientLight(0xffffff, 3);
-// scene.add(ambientLight);
-
-// const pointLight = new THREE.PointLight(0xffffff, 100000, 0);
-// pointLight.position.set(200, 200, 100);
-// pointLight.castShadow = true;
-// scene.add(pointLight);
-//light.add(helper);
-//
-// const pointLight2 = new THREE.PointLight(0xffffff, 100000, 0);
-// pointLight2.position.set(-200, 200, 100);
-// pointLight2.castShadow = true;
-// scene.add(pointLight2);
 
 const color = 0xFFFFFF;
 const intensity = 10;
@@ -70,33 +45,20 @@ const height = 300;
 const light = new THREE.RectAreaLight(color, intensity, width, height);
 light.position.set(0, 50, 0);
 scene.add(light);
-//light.rotation.x = THREE.MathUtils.degToRad(-90);
-
 
 const helper = new RectAreaLightHelper(light);
 scene.add(helper);
-
-
-//
-// const lightHelper = new THREE.PointLightHelper(pointLight, 20);
-
 
 const gui = new GUI()
 const cubeFolder = gui.addFolder('Cube')
 cubeFolder.add(controls, "repulsionStrength", 1, 4000)
 cubeFolder.add(controls, "repulsionRange", 1, 200)
-cubeFolder.add(controls, 'particleSize', 1, 200)
-//cubeFolder.add(controls, 'particleCount', 1, 2000)
+cubeFolder.add(controls, 'particleSize', 1, 20).onChange(updateParticleSize)
 cubeFolder.open()
-// const cameraFolder = gui.addFolder('Camera')
-// cameraFolder.add(camera.position, 'z', 0, 10)
-// cameraFolder.open()
 
 document.addEventListener('mousemove', (e) => {
     mouseX = e.clientX - window.innerWidth / 2;
     mouseY = window.innerHeight - e.clientY - window.innerHeight / 2;
-    //pointLight.position.x = mouseX;
-    //pointLight.position.y = mouseY;
 });
 
 window.oncontextmenu = function () {
@@ -111,71 +73,68 @@ addEventListener("mouseup", (event) => {
     mouseButtonsClicked[event.button] = false
 })
 
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new BloomPass(
-    10000,    // strength
-    5000,  // kernel size
-    5100,    // sigma ?
-    1000,  // blur render target resolution
-);
-composer.addPass(bloomPass);
-const outputPass = new OutputPass();
-composer.addPass(outputPass);
-
-
-// Create sphere geometry and material
-const sphereGeometry = new THREE.SphereGeometry(controls.particleSize, 9, 9);
-// const sphereMaterial = new THREE.MeshPhysicalMaterial({
-//     color: 0xffffff,
-//     metalness: 0,
-//     roughness: 0.9,
-//     transmission: 0.9,        // Glass transparency
-//     emissive: 0x3c3c3c,
-//     //thickness: 0.5,         // Refraction depth
-//     //clearcoat: 0.5,           // Glossy coating
-//     //clearcoatRoughness: 0,
-//     //ior: 1.5,               // Index of refraction (glass)
-//     reflectivity: 0.5
-//     //envMapIntensity: 1
-// });
-
-// Load texture
-//const textureLoader = new THREE.TextureLoader();
-//const moonTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js/examples/textures/planets/moon_1024.jpg');
-
-const sphereMaterial = new THREE.MeshStandardMaterial({
-    // map: moonTexture,
-    // aoMap: moonTexture,       // Use same texture for AO
-  //  aoMapIntensity: 1.5,       // Darken crevices
-    roughness: 0.9,
-    metalness: 0.1,
-    //emissive: 0xFFFFFF,
-    // bumpMap: moonTexture,      // Add surface depth
-    // bumpScale: 0.05            // Adjust bump intensity
-});
-
-// Note: aoMap requires UV2 coordinates
-//sphereGeometry.setAttribute('uv2', sphereGeometry.attributes.uv);
-
-const spheres = [];
+// Create particle system
+const particleGeometry = new THREE.BufferGeometry();
+const positions = new Float32Array(controls.particleCount * 3);
+const colors = new Float32Array(controls.particleCount * 3);
 
 for (let i = 0; i < controls.particleCount; i++) {
     particles.push({
-        position: new THREE.Vector3((Math.random() - 0.5) * window.innerWidth, (Math.random() - 0.5) * window.innerHeight, (Math.random() - 0.5) * 500),
-        velocity: new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10),
+        position: new THREE.Vector3(
+            (Math.random() - 0.5) * window.innerWidth,
+            (Math.random() - 0.5) * window.innerHeight,
+            (Math.random() - 0.5) * 500
+        ),
+        velocity: new THREE.Vector3(
+            (Math.random() - 0.5) * 10,
+            (Math.random() - 0.5) * 10,
+            (Math.random() - 0.5) * 10
+        ),
         life: Math.random(),
         size: controls.repulsionRange
     });
 
-    const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial.clone());
-    sphere.castShadow = true;
-    sphere.receiveShadow = true;
-    scene.add(sphere);
-    spheres.push(sphere);
+    positions[i * 3] = particles[i].position.x;
+    positions[i * 3 + 1] = particles[i].position.y;
+    positions[i * 3 + 2] = particles[i].position.z;
+
+    colors[i * 3] = 1;
+    colors[i * 3 + 1] = 1;
+    colors[i * 3 + 2] = 1;
 }
 
+particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+// Create circular texture
+const canvas = document.createElement('canvas');
+canvas.width = 64;
+canvas.height = 64;
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#ffffff';
+ctx.beginPath();
+ctx.arc(32, 32, 32, 0, Math.PI * 2);
+ctx.fill();
+
+const texture = new THREE.CanvasTexture(canvas);
+
+const particleMaterial = new THREE.PointsMaterial({
+    size: controls.particleSize,
+    map: texture,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.8,
+    sizeAttenuation: true
+});
+
+const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+scene.add(particleSystem);
+
 camera.position.z = 500;
+
+function updateParticleSize() {
+    particleMaterial.size = controls.particleSize;
+}
 
 function getGridKey(x, y, z) {
     const gridX = Math.floor(x / controls.repulsionRange);
@@ -254,6 +213,8 @@ function particleInteractions(deltaTime) {
 }
 
 function updatePhysics(deltaTime) {
+    const positions = particleGeometry.attributes.position.array;
+
     for (let i = 0; i < controls.particleCount; i++) {
         const p = particles[i];
 
@@ -274,14 +235,6 @@ function updatePhysics(deltaTime) {
             p.velocity.y += dirY * deltaTime * controls.gravity;
             p.velocity.z += dirZ * deltaTime * controls.gravity;
         }
-
-//     if(mouseButtonsClicked[0]) {
-//     const strength = 50000;
-//     const dmx = mouseX - p.position.x;
-//     const dmy = mouseY - p.position.y;
-//     p.velocity.x += dmx * deltaTime * strength;
-//     p.velocity.y += dmy * deltaTime * strength;
-// }
 
         if (mouseButtonsClicked[2]) {
             const strength = 500000;
@@ -308,17 +261,12 @@ function updatePhysics(deltaTime) {
             }
         }
 
-        spheres[i].position.copy(p.position);
-
-        // Map velocity to hue (0-1)
-        // const hue = (speed / maxSpeed) * 0.01; // 0 = red, 0.33 = green, 0.66 = blue
-        // const saturation = 0.5;
-        // const lightness = 0.5;
-        //
-        // spheres[i].material.color.setHSL(hue, saturation, lightness);
-
+        positions[i * 3] = p.position.x;
+        positions[i * 3 + 1] = p.position.y;
+        positions[i * 3 + 2] = p.position.z;
     }
 
+    particleGeometry.attributes.position.needsUpdate = true;
     buildSpatialGrid();
     particleInteractions(deltaTime);
 }

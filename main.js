@@ -16,18 +16,12 @@ let lastTime = performance.now();
 let frames = 0;
 const fpsDisplay = document.getElementById('fps');
 
-let controls= {
-    repulsionRange: 150,
-    particleSize: 2,
-    repulsionStrength: 100.2,
-    gravity: 1000,
-    particleCount: 4000
-}
+// NOTE: Removed duplicate `controls` object to avoid desync with physics.
 
 const particles = [];
 const center = new THREE.Vector3(0, 0, 0);
 const maxDistance = 500;
-const maxSpeed = 500;
+const maxSpeed = 100.1
 const damping = 0.9;
 
 let mouseX = window.innerWidth / 2;
@@ -49,12 +43,7 @@ scene.add(light);
 const helper = new RectAreaLightHelper(light);
 scene.add(helper);
 
-const gui = new GUI()
-const cubeFolder = gui.addFolder('Cube')
-cubeFolder.add(controls, "repulsionStrength", 1, 4000)
-cubeFolder.add(controls, "repulsionRange", 1, 200)
-cubeFolder.add(controls, 'particleSize', 1, 20).onChange(updateParticleSize)
-cubeFolder.open()
+// GUI is initialized after forceControls is defined to avoid TDZ errors
 
 document.addEventListener('mousemove', (e) => {
     mouseX = e.clientX - window.innerWidth / 2;
@@ -73,38 +62,148 @@ addEventListener("mouseup", (event) => {
     mouseButtonsClicked[event.button] = false
 })
 
-// Create particle system
-const particleGeometry = new THREE.BufferGeometry();
-const positions = new Float32Array(controls.particleCount * 3);
-const colors = new Float32Array(controls.particleCount * 3);
+// Placeholder declarations; actual counts are defined after forceControls
+let redRatio = 0.02; // far less red particles
+let redCount;
+let otherCount;
+let redGeometry;
+let otherGeometry;
+let redPositions;
+let redColors;
+let otherPositions;
+let otherColors;
 
-for (let i = 0; i < controls.particleCount; i++) {
+const particleTypes = {
+    RED: { color: 0xFF0000, id: 0 },
+    GREEN: { color: 0x00FF00, id: 1 },
+    BLUE: { color: 0x0000FF, id: 2 }
+};
+
+// Bidirectional controls: allow asymmetric interactions, e.g., RED attracts GREEN
+const forces = {
+    'RED-RED': 29,
+    'RED-GREEN': -1, // RED attracts GREEN
+    'RED-BLUE': -1,
+    'GREEN-GREEN': 5,
+    'GREEN-RED': 0,  // GREEN does not attract RED
+    'GREEN-BLUE': 1,
+    'BLUE-BLUE': 5,
+    'BLUE-RED': 0 // example asymmetry placeholder
+};
+
+let forceControls = {
+    repulsionRange: 150,
+    particleSize: 2,
+    repulsionStrength: 100.2,
+    gravity: 10,
+    particleCount: 1000,
+    'RED-RED': 2,
+    'RED-GREEN': 0,
+    'RED-BLUE': 0,
+    'GREEN-GREEN': 2,
+    'GREEN-RED': -1,
+    'GREEN-BLUE': 0,
+    'BLUE-BLUE': 2,
+    'BLUE-RED': 0.5,
+    'BLUE-GREEN': 0
+};
+
+// Update GUI
+const gui = new GUI();
+const cubeFolder = gui.addFolder('Cube');
+cubeFolder.add(forceControls, 'repulsionStrength', 1, 4000);
+cubeFolder.add(forceControls, 'repulsionRange', 1, 200);
+cubeFolder.add(forceControls, 'gravity', 1, 2000);
+cubeFolder.add(forceControls, 'particleSize', 1, 20).onChange(() => updateParticleSize());
+cubeFolder.open();
+
+const forcesFolder = gui.addFolder('Particle Forces');
+forcesFolder.add(forceControls, 'RED-RED', -2, 22, 0.1).onChange(() => forces['RED-RED'] = forceControls['RED-RED']);
+forcesFolder.add(forceControls, 'RED-GREEN', -2, 22, 0.1).onChange(() => forces['RED-GREEN'] = forceControls['RED-GREEN']);
+forcesFolder.add(forceControls, 'RED-BLUE', -2, 22, 0.1).onChange(() => forces['RED-BLUE'] = forceControls['RED-BLUE']);
+forcesFolder.add(forceControls, 'GREEN-RED', -2, 22, 0.1).onChange(() => forces['GREEN-RED'] = forceControls['GREEN-RED']);
+forcesFolder.add(forceControls, 'GREEN-GREEN', -2, 22, 0.1).onChange(() => forces['GREEN-GREEN'] = forceControls['GREEN-GREEN']);
+forcesFolder.add(forceControls, 'GREEN-BLUE', -2, 22, 0.1).onChange(() => forces['GREEN-BLUE'] = forceControls['GREEN-BLUE']);
+forcesFolder.add(forceControls, 'BLUE-RED', -2, 22, 0.1).onChange(() => forces['BLUE-RED'] = forceControls['BLUE-RED']);
+forcesFolder.open();
+
+cubeFolder.open();
+
+// Now that forceControls is known, allocate buffers and geometries
+redCount = Math.max(1, Math.floor(redRatio * forceControls.particleCount));
+otherCount = forceControls.particleCount - redCount;
+redGeometry = new THREE.BufferGeometry();
+otherGeometry = new THREE.BufferGeometry();
+redPositions = new Float32Array(redCount * 3);
+redColors = new Float32Array(redCount * 3);
+otherPositions = new Float32Array(otherCount * 3);
+otherColors = new Float32Array(otherCount * 3);
+
+// Modify particle initialization
+let redIndex = 0;
+let otherIndex = 0;
+for (let i = 0; i < forceControls.particleCount; i++) {
+    // Distribute types but ensure RED is far less frequent
+    // Choose RED for the first redCount particles; others cycle between GREEN/BLUE
+    const isRed = i < redCount;
+    const typeKey = isRed ? 'RED' : (otherIndex % 2 === 0 ? 'GREEN' : 'BLUE');
+    const type = particleTypes[typeKey];
+    const typeId = type.id;
+
+    const pos = new THREE.Vector3(
+        (Math.random() - 0.5) * window.innerWidth,
+        (Math.random() - 0.5) * window.innerHeight,
+        (Math.random() - 0.5) * 500
+    );
+    const vel = new THREE.Vector3(
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10
+    );
+
+    // Keep track of which buffer this particle writes to and its index within that buffer
+    const bufferKind = isRed ? 'RED' : 'OTHER';
+    const bufferIndex = isRed ? redIndex : otherIndex;
+
     particles.push({
-        position: new THREE.Vector3(
-            (Math.random() - 0.5) * window.innerWidth,
-            (Math.random() - 0.5) * window.innerHeight,
-            (Math.random() - 0.5) * 500
-        ),
-        velocity: new THREE.Vector3(
-            (Math.random() - 0.5) * 10,
-            (Math.random() - 0.5) * 10,
-            (Math.random() - 0.5) * 10
-        ),
+        position: pos,
+        velocity: vel,
+        type: typeId,
         life: Math.random(),
-        size: controls.repulsionRange
+        size: forceControls.repulsionRange,
+        bufferKind,
+        bufferIndex
     });
 
-    positions[i * 3] = particles[i].position.x;
-    positions[i * 3 + 1] = particles[i].position.y;
-    positions[i * 3 + 2] = particles[i].position.z;
+    const rgb = [
+        (type.color >> 16) & 255,
+        (type.color >> 8) & 255,
+        type.color & 255
+    ];
 
-    colors[i * 3] = 1;
-    colors[i * 3 + 1] = 1;
-    colors[i * 3 + 2] = 1;
+    if (isRed) {
+        redPositions[redIndex * 3] = pos.x;
+        redPositions[redIndex * 3 + 1] = pos.y;
+        redPositions[redIndex * 3 + 2] = pos.z;
+        redColors[redIndex * 3] = rgb[0] / 255;
+        redColors[redIndex * 3 + 1] = rgb[1] / 255;
+        redColors[redIndex * 3 + 2] = rgb[2] / 255;
+        redIndex++;
+    } else {
+        otherPositions[otherIndex * 3] = pos.x;
+        otherPositions[otherIndex * 3 + 1] = pos.y;
+        otherPositions[otherIndex * 3 + 2] = pos.z;
+        otherColors[otherIndex * 3] = rgb[0] / 255;
+        otherColors[otherIndex * 3 + 1] = rgb[1] / 255;
+        otherColors[otherIndex * 3 + 2] = rgb[2] / 255;
+        otherIndex++;
+    }
 }
 
-particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+redGeometry.setAttribute('position', new THREE.BufferAttribute(redPositions, 3));
+redGeometry.setAttribute('color', new THREE.BufferAttribute(redColors, 3));
+otherGeometry.setAttribute('position', new THREE.BufferAttribute(otherPositions, 3));
+otherGeometry.setAttribute('color', new THREE.BufferAttribute(otherColors, 3));
 
 // Create circular texture
 const canvas = document.createElement('canvas');
@@ -118,8 +217,8 @@ ctx.fill();
 
 const texture = new THREE.CanvasTexture(canvas);
 
-const particleMaterial = new THREE.PointsMaterial({
-    size: controls.particleSize,
+const otherMaterial = new THREE.PointsMaterial({
+    size: forceControls.particleSize,
     map: texture,
     vertexColors: true,
     transparent: true,
@@ -127,25 +226,43 @@ const particleMaterial = new THREE.PointsMaterial({
     sizeAttenuation: true
 });
 
-const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
-scene.add(particleSystem);
+const redMaterial = new THREE.PointsMaterial({
+    size: forceControls.particleSize * 6, // much bigger
+    map: texture,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.9,
+    sizeAttenuation: true
+});
+
+function updateParticleSize() {
+    otherMaterial.size = forceControls.particleSize;
+    otherMaterial.needsUpdate = true;
+    // keep red larger proportionally
+    redMaterial.size = forceControls.particleSize * 6;
+    redMaterial.needsUpdate = true;
+}
+
+// Call it once on initialization
+updateParticleSize();
+
+const redSystem = new THREE.Points(redGeometry, redMaterial);
+const otherSystem = new THREE.Points(otherGeometry, otherMaterial);
+scene.add(otherSystem);
+scene.add(redSystem);
 
 camera.position.z = 500;
 
-function updateParticleSize() {
-    particleMaterial.size = controls.particleSize;
-}
-
 function getGridKey(x, y, z) {
-    const gridX = Math.floor(x / controls.repulsionRange);
-    const gridY = Math.floor(y / controls.repulsionRange);
-    const gridZ = Math.floor(z / controls.repulsionRange);
+    const gridX = Math.floor(x / forceControls.repulsionRange);
+    const gridY = Math.floor(y / forceControls.repulsionRange);
+    const gridZ = Math.floor(z / forceControls.repulsionRange);
     return `${gridX},${gridY},${gridZ}`;
 }
 
 function buildSpatialGrid() {
     spatialGrid.clear();
-    for (let i = 0; i < controls.particleCount; i++) {
+    for (let i = 0; i < forceControls.particleCount; i++) {
         const key = getGridKey(particles[i].position.x, particles[i].position.y, particles[i].position.z);
         if (!spatialGrid.has(key)) {
             spatialGrid.set(key, []);
@@ -156,9 +273,9 @@ function buildSpatialGrid() {
 
 function getNearbyCells(x, y, z) {
     const searchCells = [];
-    const gridX = Math.floor(x / controls.repulsionRange);
-    const gridY = Math.floor(y / controls.repulsionRange);
-    const gridZ = Math.floor(z / controls.repulsionRange);
+    const gridX = Math.floor(x / forceControls.repulsionRange);
+    const gridY = Math.floor(y / forceControls.repulsionRange);
+    const gridZ = Math.floor(z / forceControls.repulsionRange);
     const searchRadius = 1;
 
     for (let dx = -searchRadius; dx <= searchRadius; dx++) {
@@ -177,7 +294,7 @@ function getNearbyCells(x, y, z) {
 function particleInteractions(deltaTime) {
     const futureTime = deltaTime * 0.3;
 
-    for (let i = 0; i < controls.particleCount; i++) {
+    for (let i = 0; i < forceControls.particleCount; i++) {
         const p = particles[i];
         const futureX = p.position.x + p.velocity.x * futureTime;
         const futureY = p.position.y + p.velocity.y * futureTime;
@@ -189,33 +306,59 @@ function particleInteractions(deltaTime) {
             if (!cell) continue;
 
             cell.forEach(otherNo => {
+                if (i === otherNo) return;
+
                 const other = particles[otherNo];
                 const dx = futureX - other.position.x;
                 const dy = futureY - other.position.y;
                 const dz = futureZ - other.position.z;
                 const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-                if (dist < controls.repulsionRange && dist > 0) {
+                if (dist < forceControls.repulsionRange && dist > 0) {
+                    const typeNames = Object.keys(particleTypes);
+                    const type1 = typeNames[p.type];
+                    const type2 = typeNames[other.type];
+
+                    // Asymmetric (bidirectional) forces: use exact pair, no fallback swap
+                    const ruleKey = `${type1}-${type2}`;
+                    let rule = forces[ruleKey];
+                    if (rule === undefined) rule = 0;
+
                     const dirX = dx / dist;
                     const dirY = dy / dist;
                     const dirZ = dz / dist;
-                    const force = controls.repulsionStrength * Math.pow(1 - dist / controls.repulsionRange, 2) * 0.5 * deltaTime;
+
+                    // Clamp distance to prevent extreme forces at very small distances
+                    const minDist = forceControls.repulsionRange * 0.05;
+                    const clampedDist = Math.max(dist, minDist);
+
+                    let forceMagnitude = forceControls.repulsionStrength *
+                        Math.pow(1 - clampedDist / forceControls.repulsionRange, 2) * deltaTime
+
+                    // Reduce force when particles are very close and attracting
+                    if (rule < 0 && dist < forceControls.repulsionRange * 0.05) {
+                        forceMagnitude =  0// dist / (forceControls.repulsionRange * 0.2);
+                    }
+
+                    // Clamp final force to prevent instability
+                    const maxForce = 20000;
+                    const force = Math.max(-maxForce, Math.min(maxForce, forceMagnitude * rule));
+
                     p.velocity.x += dirX * force;
                     p.velocity.y += dirY * force;
                     p.velocity.z += dirZ * force;
-                    other.velocity.x -= dirX * force;
-                    other.velocity.y -= dirY * force;
-                    other.velocity.z -= dirZ * force;
+                    // other.velocity.x -= dirX * force;
+                    // other.velocity.y -= dirY * force;
+                    // other.velocity.z -= dirZ * force;
                 }
             });
         }
     }
 }
 
-function updatePhysics(deltaTime) {
-    const positions = particleGeometry.attributes.position.array;
 
-    for (let i = 0; i < controls.particleCount; i++) {
+function updatePhysics(deltaTime) {
+    for (let i = 0; i < forceControls.particleCount; i++) {
         const p = particles[i];
 
         p.position.x += p.velocity.x * deltaTime;
@@ -231,11 +374,12 @@ function updatePhysics(deltaTime) {
             const dirX = dx / distToCenter;
             const dirY = dy / distToCenter;
             const dirZ = dz / distToCenter;
-            p.velocity.x += dirX * deltaTime * controls.gravity;
-            p.velocity.y += dirY * deltaTime * controls.gravity;
-            p.velocity.z += dirZ * deltaTime * controls.gravity;
+            p.velocity.x += dirX * deltaTime * forceControls.gravity;
+            p.velocity.y += dirY * deltaTime * forceControls.gravity;
+            p.velocity.z += dirZ * deltaTime * forceControls.gravity;
         }
 
+        // Mouse right-click attraction to cursor
         if (mouseButtonsClicked[2]) {
             const strength = 500000;
             const dmx = mouseX - p.position.x;
@@ -251,22 +395,22 @@ function updatePhysics(deltaTime) {
             p.velocity.normalize().multiplyScalar(maxSpeed);
         }
 
-        if (mouseButtonsClicked[1]) {
-            p.life -= deltaTime * 0.01;
-
-            if (p.life <= 0) {
-                p.position.set(mouseX + Math.random() * 20, mouseY + Math.random() * 20, (Math.random() - 0.5) * 100);
-                p.velocity.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
-                p.life = 1;
-            }
+        // write to correct buffer
+        if (p.bufferKind === 'RED') {
+            const bi = p.bufferIndex * 3;
+            redPositions[bi] = p.position.x;
+            redPositions[bi + 1] = p.position.y;
+            redPositions[bi + 2] = p.position.z;
+        } else {
+            const bi = p.bufferIndex * 3;
+            otherPositions[bi] = p.position.x;
+            otherPositions[bi + 1] = p.position.y;
+            otherPositions[bi + 2] = p.position.z;
         }
-
-        positions[i * 3] = p.position.x;
-        positions[i * 3 + 1] = p.position.y;
-        positions[i * 3 + 2] = p.position.z;
     }
 
-    particleGeometry.attributes.position.needsUpdate = true;
+    redGeometry.attributes.position.needsUpdate = true;
+    otherGeometry.attributes.position.needsUpdate = true;
     buildSpatialGrid();
     particleInteractions(deltaTime);
 }

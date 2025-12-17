@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'dat.gui'
+import {RectAreaLightUniformsLib} from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import {RectAreaLightHelper} from 'three/addons/helpers/RectAreaLightHelper.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 
 const scene = new THREE.Scene();
@@ -47,13 +49,34 @@ let spatialGrid = new Map();
 const ambientLight = new THREE.AmbientLight(0xffffff, 3);
 scene.add(ambientLight);
 
-const pointLight = new THREE.PointLight(0xffffff, 100000, 0);
-pointLight.position.set(200, 200, 100);
-pointLight.castShadow = true;
-scene.add(pointLight);
+// const pointLight = new THREE.PointLight(0xffffff, 100000, 0);
+// pointLight.position.set(200, 200, 100);
+// pointLight.castShadow = true;
+// scene.add(pointLight);
+//light.add(helper);
+//
+// const pointLight2 = new THREE.PointLight(0xffffff, 100000, 0);
+// pointLight2.position.set(-200, 200, 100);
+// pointLight2.castShadow = true;
+// scene.add(pointLight2);
 
-const lightHelper = new THREE.PointLightHelper(pointLight, 20);
-scene.add(lightHelper);
+const color = 0xFFFFFF;
+const intensity = 100;
+const width = 5;
+const height = 300;
+const light = new THREE.RectAreaLight(color, intensity, width, height);
+light.position.set(0, 50, 0);
+scene.add(light);
+//light.rotation.x = THREE.MathUtils.degToRad(-90);
+
+
+const helper = new RectAreaLightHelper(light);
+scene.add(helper);
+
+
+//
+// const lightHelper = new THREE.PointLightHelper(pointLight, 20);
+
 
 const gui = new GUI()
 const cubeFolder = gui.addFolder('Cube')
@@ -98,11 +121,12 @@ const sphereMaterial = new THREE.MeshPhysicalMaterial({
     metalness: 0,
     roughness: 0.9,
     transmission: 0.9,        // Glass transparency
+   // emissive: 0x3c3c3c,
     //thickness: 0.5,         // Refraction depth
     //clearcoat: 0.5,           // Glossy coating
     //clearcoatRoughness: 0,
     //ior: 1.5,               // Index of refraction (glass)
-    //reflectivity: 0.5,
+    reflectivity: 0.9,
     //envMapIntensity: 1
 });
 
@@ -260,11 +284,11 @@ function updatePhysics(deltaTime) {
         spheres[i].position.copy(p.position);
 
         // Map velocity to hue (0-1)
-        const hue = (speed / maxSpeed) * 0.01; // 0 = red, 0.33 = green, 0.66 = blue
-        const saturation = 0.5;
-        const lightness = 0.5;
-
-        spheres[i].material.color.setHSL(hue, saturation, lightness);
+        // const hue = (speed / maxSpeed) * 0.01; // 0 = red, 0.33 = green, 0.66 = blue
+        // const saturation = 0.5;
+        // const lightness = 0.5;
+        //
+        // spheres[i].material.color.setHSL(hue, saturation, lightness);
 
     }
 
@@ -283,6 +307,7 @@ function animate() {
 
     updatePhysics(deltaTime);
     renderer.render(scene, camera);
+    RectAreaLightUniformsLib.init();
 
     frames++;
     if (now >= lastTime + 1000) {

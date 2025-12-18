@@ -25,7 +25,7 @@ const fpsDisplay = document.getElementById('fps');
 const particles = [];
 const center = new THREE.Vector3(0, 0, 0);
 const maxDistance = 500;
-const maxSpeed = 100.1
+const maxSpeed = 20000.1
 const damping = 0.9;
 
 let mouseX = window.innerWidth / 2;
@@ -57,14 +57,6 @@ window.oncontextmenu = function () {
     return false;
 }
 
-addEventListener("mousedown", (event) => {
-    mouseButtonsClicked[event.button] = true
-})
-
-addEventListener("mouseup", (event) => {
-    mouseButtonsClicked[event.button] = false
-})
-
 // Placeholder declarations; actual counts are defined after forceControls
 let redRatio = 0.005; // far less red particles
 let redCount;
@@ -89,8 +81,8 @@ const typeNames = Object.keys(particleTypes);
 let forceControls = {
     repulsionRange: 150,
     particleSize: 2,
-    repulsionStrength: 100.2,
-    gravity: 1000,
+    repulsionStrength: 1,
+    gravity: 10,
     particleCount: 6000,
     'RED-RED': 2,
     'RED-GREEN': 1.4,
@@ -106,7 +98,7 @@ let forceControls = {
 // Update GUI
 const gui = new GUI();
 const cubeFolder = gui.addFolder('Cube');
-cubeFolder.add(forceControls, 'repulsionStrength', 1, 4000);
+cubeFolder.add(forceControls, 'repulsionStrength', 1, 1000);
 cubeFolder.add(forceControls, 'repulsionRange', 1, 200);
 cubeFolder.add(forceControls, 'gravity', 1, 2000);
 cubeFolder.add(forceControls, 'particleSize', 1, 20).onChange(() => updateParticleSize());
@@ -249,7 +241,7 @@ const velocityShader = `
     uniform float damping;
     uniform float maxSpeed;
     uniform vec2 mouse;
-    uniform float mouseAttraction;
+    uniform float spaceAttraction;
     uniform float maxForce;
 
     // Force matrix: forces[from][to]
@@ -332,9 +324,9 @@ const velocityShader = `
         }
 
         // Mouse attraction
-        if (mouseAttraction > 0.0) {
+        if (spaceAttraction > 0.0) {
             vec2 toMouse = mouse - position.xy;
-            force.xy += toMouse * mouseAttraction * deltaTime;
+            force.xy += toMouse * spaceAttraction * deltaTime;
         }
 
         // Update velocity
@@ -386,8 +378,8 @@ velocityVariable.material.uniforms['center'] = { value: center };
 velocityVariable.material.uniforms['damping'] = { value: damping };
 velocityVariable.material.uniforms['maxSpeed'] = { value: maxSpeed };
 velocityVariable.material.uniforms['mouse'] = { value: new THREE.Vector2() };
-velocityVariable.material.uniforms['mouseAttraction'] = { value: 0.0 };
-velocityVariable.material.uniforms['maxForce'] = { value: 100.0 };
+velocityVariable.material.uniforms['spaceAttraction'] = { value: 0.0 };
+velocityVariable.material.uniforms['maxForce'] = { value: 300.0 };
 velocityVariable.material.uniforms['forceMatrix'] = { value: new THREE.Matrix3() };
 
 positionVariable.material.uniforms['deltaTime'] = { value: 0.0 };
@@ -396,6 +388,16 @@ const error = gpuCompute.init();
 if (error !== null) {
     console.error('GPUComputationRenderer error:', error);
 }
+
+const keysPressed = { };
+
+document.addEventListener('keydown', (event) => {
+    keysPressed[event.code] = true;
+});
+
+document.addEventListener('keyup', (event) => {
+    keysPressed[event.code] = false;
+});
 
 // Create circular texture
 const canvas = document.createElement('canvas');
@@ -459,7 +461,7 @@ composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    4.0,  // strength
+    1.0,  // strength
     1,  // radius
     0.0   // threshold (0 = bloom everything)
 );
@@ -532,7 +534,7 @@ function updatePhysicsGPU(deltaTime) {
     velocityVariable.material.uniforms['repulsionStrength'].value = forceControls.repulsionStrength;
     velocityVariable.material.uniforms['gravity'].value = forceControls.gravity;
     velocityVariable.material.uniforms['mouse'].value.set(mouseX, mouseY);
-    velocityVariable.material.uniforms['mouseAttraction'].value = mouseButtonsClicked[2] ? 500000 : 0;
+    velocityVariable.material.uniforms['spaceAttraction'].value = keysPressed['Space'] ? 50 : 0;
 
     updateForceMatrix();
 

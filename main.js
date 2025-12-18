@@ -58,7 +58,7 @@ window.oncontextmenu = function () {
 }
 
 // Placeholder declarations; actual counts are defined after forceControls
-let redRatio = 0.005; // far less red particles
+let redRatio = 0.001; // far less red particles
 let redCount;
 let otherCount;
 let redGeometry;
@@ -82,11 +82,11 @@ let forceControls = {
     repulsionRange: 150,
     particleSize: 2,
     repulsionStrength: 1,
-    gravity: 10,
+    gravity: 247,
     particleCount: 6000,
     'RED-RED': 2,
-    'RED-GREEN': 1.4,
-    'RED-BLUE': 0.1,
+    'RED-GREEN': -0.7,
+    'RED-BLUE': 0.5,
     'GREEN-RED': 0,
     'GREEN-GREEN': 0,
     'GREEN-BLUE': 0.1,
@@ -98,10 +98,10 @@ let forceControls = {
 // Update GUI
 const gui = new GUI();
 const cubeFolder = gui.addFolder('Cube');
-cubeFolder.add(forceControls, 'repulsionStrength', 1, 1000);
-cubeFolder.add(forceControls, 'repulsionRange', 1, 200);
-cubeFolder.add(forceControls, 'gravity', 1, 2000);
-cubeFolder.add(forceControls, 'particleSize', 1, 20).onChange(() => updateParticleSize());
+cubeFolder.add(forceControls, 'repulsionStrength', 0.1, 1000);
+cubeFolder.add(forceControls, 'repulsionRange', 1, 500);
+cubeFolder.add(forceControls, 'gravity', 0.01, 2000);
+cubeFolder.add(forceControls, 'particleSize', 0.1, 20).onChange(() => updateParticleSize());
 cubeFolder.open();
 
 const forcesFolder = gui.addFolder('Particle Forces');
@@ -447,7 +447,7 @@ const otherSystem = new THREE.Points(otherGeometry, otherMaterial);
 scene.add(otherSystem);
 scene.add(redSystem);
 
-camera.position.z = 500;
+camera.position.z = 350;
 camera.far = 500000;
 camera.updateProjectionMatrix();
 
@@ -461,7 +461,7 @@ composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.0,  // strength
+    2.0,  // strength
     1,  // radius
     0.0   // threshold (0 = bloom everything)
 );

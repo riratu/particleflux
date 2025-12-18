@@ -7,6 +7,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -92,7 +93,7 @@ let forceControls = {
     particleSize: 2,
     repulsionStrength: 100.2,
     gravity: 400,
-    particleCount: 1000,
+    particleCount: 10000,
     'RED-RED': 2,
     'RED-GREEN': 1.4,
     'RED-BLUE': 0.1,
@@ -100,8 +101,8 @@ let forceControls = {
     'GREEN-GREEN': 0,
     'GREEN-BLUE': 0.1,
     'BLUE-RED': -1.1,
-    'BLUE-BLUE': -0.1,
-    'BLUE-GREEN': -0.3,
+    'BLUE-BLUE': 0,
+    'BLUE-GREEN': -0.3
 };
 
 // Update GUI
@@ -139,6 +140,15 @@ forcesFolder.open();
 
 cubeFolder.open();
 
+// Setup GPU Computation
+const WIDTH = Math.ceil(Math.sqrt(forceControls.particleCount));
+const gpuCompute = new GPUComputationRenderer(WIDTH, WIDTH, renderer);
+
+// Position texture (xyz = position, w = particle type)
+const dtPosition = gpuCompute.createTexture();
+// Velocity texture (xyz = velocity, w = unused)
+const dtVelocity = gpuCompute.createTexture();
+
 // Now that forceControls is known, allocate buffers and geometries
 redCount = Math.max(1, Math.floor(redRatio * forceControls.particleCount));
 otherCount = forceControls.particleCount - redCount;
@@ -149,12 +159,14 @@ redColors = new Float32Array(redCount * 3);
 otherPositions = new Float32Array(otherCount * 3);
 otherColors = new Float32Array(otherCount * 3);
 
-// Modify particle initialization
+// Initialize GPU textures with particle data
 let redIndex = 0;
 let otherIndex = 0;
+const posArray = dtPosition.image.data;
+const velArray = dtVelocity.image.data;
+
 for (let i = 0; i < forceControls.particleCount; i++) {
     // Distribute types but ensure RED is far less frequent
-    // Choose RED for the first redCount particles; others cycle between GREEN/BLUE
     const isRed = i < redCount;
     const typeKey = isRed ? 'RED' : (otherIndex % 2 === 0 ? 'GREEN' : 'BLUE');
     const type = particleTypes[typeKey];
@@ -170,6 +182,18 @@ for (let i = 0; i < forceControls.particleCount; i++) {
         (Math.random() - 0.5) * 10,
         (Math.random() - 0.5) * 10
     );
+
+    // Store in GPU texture
+    const i4 = i * 4;
+    posArray[i4 + 0] = pos.x;
+    posArray[i4 + 1] = pos.y;
+    posArray[i4 + 2] = pos.z;
+    posArray[i4 + 3] = typeId; // Store particle type in w component
+
+    velArray[i4 + 0] = vel.x;
+    velArray[i4 + 1] = vel.y;
+    velArray[i4 + 2] = vel.z;
+    velArray[i4 + 3] = 0.0;
 
     // Keep track of which buffer this particle writes to and its index within that buffer
     const bufferKind = isRed ? 'RED' : 'OTHER';
@@ -214,6 +238,164 @@ redGeometry.setAttribute('position', new THREE.BufferAttribute(redPositions, 3))
 redGeometry.setAttribute('color', new THREE.BufferAttribute(redColors, 3));
 otherGeometry.setAttribute('position', new THREE.BufferAttribute(otherPositions, 3));
 otherGeometry.setAttribute('color', new THREE.BufferAttribute(otherColors, 3));
+
+// Velocity computation shader - calculates forces between particles
+const velocityShader = `
+    uniform float deltaTime;
+    uniform float repulsionRange;
+    uniform float repulsionStrength;
+    uniform float gravity;
+    uniform vec3 center;
+    uniform float damping;
+    uniform float maxSpeed;
+    uniform vec2 mouse;
+    uniform float mouseAttraction;
+    uniform float maxForce;
+
+    // Force matrix: forces[from][to]
+    uniform mat3 forceMatrix; // 3x3 for RED, GREEN, BLUE interactions
+
+    // Helper to get grid cell from position
+    vec3 getGridCell(vec3 pos) {
+        return floor(pos / repulsionRange);
+    }
+
+    void main() {
+        vec2 uv = gl_FragCoord.xy / resolution.xy;
+        vec4 tmpPos = texture2D(texturePosition, uv);
+        vec3 position = tmpPos.xyz;
+        float particleType = tmpPos.w;
+
+        vec4 tmpVel = texture2D(textureVelocity, uv);
+        vec3 velocity = tmpVel.xyz;
+
+        vec3 force = vec3(0.0);
+
+        // Get current particle's grid cell
+        vec3 gridCell = getGridCell(position);
+        float searchRadius = 1.0;
+
+        // Particle-particle interactions with spatial optimization
+        for (float y = 0.0; y < resolution.y; y++) {
+            for (float x = 0.0; x < resolution.x; x++) {
+                vec2 otherUV = vec2(x, y) / resolution.xy;
+                vec4 otherPos = texture2D(texturePosition, otherUV);
+                vec3 otherPosition = otherPos.xyz;
+                float otherType = otherPos.w;
+
+                if (otherUV == uv) continue;
+
+                // Spatial grid optimization: skip if particle is too far
+                vec3 otherGridCell = getGridCell(otherPosition);
+                vec3 gridDiff = abs(gridCell - otherGridCell);
+
+                // Skip if not in neighboring cells (check 3x3x3 = 27 cells)
+                if (gridDiff.x > searchRadius || gridDiff.y > searchRadius || gridDiff.z > searchRadius) {
+                    continue;
+                }
+
+                vec3 diff = position - otherPosition;
+                float dist = length(diff);
+
+                if (dist < repulsionRange && dist > 0.0) {
+                    vec3 dir = diff / dist;
+
+                    // Get force rule from matrix
+                    int typeIdx = int(particleType);
+                    int otherIdx = int(otherType);
+                    float rule = forceMatrix[typeIdx][otherIdx];
+
+                    // Clamp distance to prevent extreme forces
+                    float minDist = repulsionRange * 0.05;
+                    float clampedDist = max(dist, minDist);
+
+                    float forceMagnitude = repulsionStrength *
+                        pow(1.0 - clampedDist / repulsionRange, 2.0);
+
+                    // Reduce force when particles are very close and attracting
+                    if (rule < 0.0 && dist < repulsionRange * 0.09) {
+                        forceMagnitude = 0.0;
+                    }
+
+                    float f = clamp(forceMagnitude * rule, -maxForce, maxForce);
+                    force += dir * f;
+                }
+            }
+        }
+
+        // Gravity towards center
+        vec3 toCenter = center - position;
+        float distToCenter = length(toCenter);
+        if (distToCenter > 10.0) {
+            vec3 dirToCenter = toCenter / distToCenter;
+            force += dirToCenter * gravity * deltaTime;
+        }
+
+        // Mouse attraction
+        if (mouseAttraction > 0.0) {
+            vec2 toMouse = mouse - position.xy;
+            force.xy += toMouse * mouseAttraction * deltaTime;
+        }
+
+        // Update velocity
+        velocity += force;
+        velocity *= damping;
+
+        // Clamp speed
+        float speed = length(velocity);
+        if (speed > maxSpeed) {
+            velocity = normalize(velocity) * maxSpeed;
+        }
+
+        gl_FragColor = vec4(velocity, 0.0);
+    }
+`;
+
+// Position computation shader - integrates velocity into position
+const positionShader = `
+    uniform float deltaTime;
+
+    void main() {
+        vec2 uv = gl_FragCoord.xy / resolution.xy;
+        vec4 tmpPos = texture2D(texturePosition, uv);
+        vec3 position = tmpPos.xyz;
+        float particleType = tmpPos.w;
+
+        vec3 velocity = texture2D(textureVelocity, uv).xyz;
+
+        position += velocity * deltaTime;
+
+        gl_FragColor = vec4(position, particleType);
+    }
+`;
+
+// Create computation variables
+const velocityVariable = gpuCompute.addVariable('textureVelocity', velocityShader, dtVelocity);
+const positionVariable = gpuCompute.addVariable('texturePosition', positionShader, dtPosition);
+
+// Add dependencies
+gpuCompute.setVariableDependencies(velocityVariable, [positionVariable, velocityVariable]);
+gpuCompute.setVariableDependencies(positionVariable, [positionVariable, velocityVariable]);
+
+// Add uniforms
+velocityVariable.material.uniforms['deltaTime'] = { value: 0.0 };
+velocityVariable.material.uniforms['repulsionRange'] = { value: forceControls.repulsionRange };
+velocityVariable.material.uniforms['repulsionStrength'] = { value: forceControls.repulsionStrength };
+velocityVariable.material.uniforms['gravity'] = { value: forceControls.gravity };
+velocityVariable.material.uniforms['center'] = { value: center };
+velocityVariable.material.uniforms['damping'] = { value: damping };
+velocityVariable.material.uniforms['maxSpeed'] = { value: maxSpeed };
+velocityVariable.material.uniforms['mouse'] = { value: new THREE.Vector2() };
+velocityVariable.material.uniforms['mouseAttraction'] = { value: 0.0 };
+velocityVariable.material.uniforms['maxForce'] = { value: 100.0 };
+velocityVariable.material.uniforms['forceMatrix'] = { value: new THREE.Matrix3() };
+
+positionVariable.material.uniforms['deltaTime'] = { value: 0.0 };
+
+const error = gpuCompute.init();
+if (error !== null) {
+    console.error('GPUComputationRenderer error:', error);
+}
 
 // Create circular texture
 const canvas = document.createElement('canvas');
@@ -287,6 +469,20 @@ composer.addPass(bloomPass);
 //     maxblur: forceControls.bokehMaxblur
 // } );
 // composer.addPass( bokehPass );
+
+// Helper to update force matrix from forceControls
+function updateForceMatrix() {
+    const matrix = velocityVariable.material.uniforms['forceMatrix'].value;
+    // Matrix layout: [RED][GREEN][BLUE] rows, [RED][GREEN][BLUE] columns
+    matrix.set(
+        forceControls['RED-RED'], forceControls['RED-GREEN'], forceControls['RED-BLUE'],
+        forceControls['GREEN-RED'], forceControls['GREEN-GREEN'], forceControls['GREEN-BLUE'],
+        forceControls['BLUE-RED'], forceControls['BLUE-GREEN'], forceControls['BLUE-BLUE']
+    );
+}
+
+// Update force matrix on init
+updateForceMatrix();
 
 function getGridKey(x, y, z) {
     const gridX = Math.floor(x / forceControls.repulsionRange);
@@ -391,45 +587,39 @@ function particleInteractions(deltaTime) {
 }
 
 
-function updatePhysics(deltaTime) {
+function updatePhysicsGPU(deltaTime) {
+    // Update uniforms
+    velocityVariable.material.uniforms['deltaTime'].value = deltaTime;
+    velocityVariable.material.uniforms['repulsionRange'].value = forceControls.repulsionRange;
+    velocityVariable.material.uniforms['repulsionStrength'].value = forceControls.repulsionStrength;
+    velocityVariable.material.uniforms['gravity'].value = forceControls.gravity;
+    velocityVariable.material.uniforms['mouse'].value.set(mouseX, mouseY);
+    velocityVariable.material.uniforms['mouseAttraction'].value = mouseButtonsClicked[2] ? 500000 : 0;
+
+    updateForceMatrix();
+
+    positionVariable.material.uniforms['deltaTime'].value = deltaTime;
+
+    // Compute on GPU
+    gpuCompute.compute();
+
+    // Read back positions from GPU to update particle buffers
+    renderer.readRenderTargetPixels(
+        gpuCompute.getCurrentRenderTarget(positionVariable),
+        0, 0, WIDTH, WIDTH,
+        posArray
+    );
+
+    // Update particle position buffers
     for (let i = 0; i < forceControls.particleCount; i++) {
         const p = particles[i];
+        const i4 = i * 4;
 
-        p.position.x += p.velocity.x * deltaTime;
-        p.position.y += p.velocity.y * deltaTime;
-        p.position.z += p.velocity.z * deltaTime;
+        p.position.x = posArray[i4 + 0];
+        p.position.y = posArray[i4 + 1];
+        p.position.z = posArray[i4 + 2];
 
-        const dx = center.x - p.position.x;
-        const dy = center.y - p.position.y;
-        const dz = center.z - p.position.z;
-        const distToCenter = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-        if (distToCenter > 10) {
-            const dirX = dx / distToCenter;
-            const dirY = dy / distToCenter;
-            const dirZ = dz / distToCenter;
-            p.velocity.x += dirX * deltaTime * forceControls.gravity;
-            p.velocity.y += dirY * deltaTime * forceControls.gravity;
-            p.velocity.z += dirZ * deltaTime * forceControls.gravity;
-        }
-
-        // Mouse right-click attraction to cursor
-        if (mouseButtonsClicked[2]) {
-            const strength = 500000;
-            const dmx = mouseX - p.position.x;
-            const dmy = mouseY - p.position.y;
-            p.velocity.x -= dmx * deltaTime * strength;
-            p.velocity.y -= dmy * deltaTime * strength;
-        }
-
-        p.velocity.multiplyScalar(damping);
-
-        const speed = p.velocity.length();
-        if (speed > maxSpeed) {
-            p.velocity.normalize().multiplyScalar(maxSpeed);
-        }
-
-        // write to correct buffer
+        // Write to correct rendering buffer
         if (p.bufferKind === 'RED') {
             const bi = p.bufferIndex * 3;
             redPositions[bi] = p.position.x;
@@ -445,8 +635,6 @@ function updatePhysics(deltaTime) {
 
     redGeometry.attributes.position.needsUpdate = true;
     otherGeometry.attributes.position.needsUpdate = true;
-    buildSpatialGrid();
-    particleInteractions(deltaTime);
 }
 
 let lastFrameTime = performance.now();
@@ -458,7 +646,7 @@ function animate() {
     const deltaTime = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
-    updatePhysics(deltaTime);
+    updatePhysicsGPU(deltaTime);
     composer.render();
 
     frames++;

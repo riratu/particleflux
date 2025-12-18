@@ -67,7 +67,7 @@ addEventListener("mouseup", (event) => {
 })
 
 // Placeholder declarations; actual counts are defined after forceControls
-let redRatio = 0.02; // far less red particles
+let redRatio = 0.005; // far less red particles
 let redCount;
 let otherCount;
 let redGeometry;
@@ -83,19 +83,10 @@ const particleTypes = {
     BLUE: { color: 0xAAAAFF, id: 2 }    // Desaturated light blue
 };
 
-// Bidirectional controls: allow asymmetric interactions, e.g., RED attracts GREEN
-const forces = {
-    'RED-RED': 2,
-    'RED-GREEN': -1.4, // RED attracts GREEN
-    'RED-BLUE': 9.1,
-    'GREEN-RED': 12.3,
-    'GREEN-GREEN': -0.1,
-    'GREEN-BLUE': 9.4,
-    'BLUE-RED': 18.1,
-    'BLUE-BLUE': 18.1,
-    'BLUE-GREEN': 15,
-};
+// Cache type names array to avoid repeated allocation
+const typeNames = Object.keys(particleTypes);
 
+// Single source of truth for forces
 let forceControls = {
     repulsionRange: 150,
     particleSize: 2,
@@ -103,14 +94,14 @@ let forceControls = {
     gravity: 400,
     particleCount: 1000,
     'RED-RED': 2,
-    'RED-GREEN': 0,
-    'RED-BLUE': 0,
-    'GREEN-GREEN': 2,
-    'GREEN-RED': -1,
-    'GREEN-BLUE': 0,
-    'BLUE-BLUE': 2,
-    'BLUE-RED': 0.5,
-    'BLUE-GREEN': 0,
+    'RED-GREEN': 1.4,
+    'RED-BLUE': 0.1,
+    'GREEN-RED': 0,
+    'GREEN-GREEN': 0,
+    'GREEN-BLUE': 0.1,
+    'BLUE-RED': -1.1,
+    'BLUE-BLUE': -0.1,
+    'BLUE-GREEN': -0.3,
 };
 
 // Update GUI
@@ -123,15 +114,15 @@ cubeFolder.add(forceControls, 'particleSize', 1, 20).onChange(() => updatePartic
 cubeFolder.open();
 
 const forcesFolder = gui.addFolder('Particle Forces');
-forcesFolder.add(forceControls, 'RED-RED', -2, 22, 0.1).onChange(() => forces['RED-RED'] = forceControls['RED-RED']);
-forcesFolder.add(forceControls, 'RED-GREEN', -2, 22, 0.1).onChange(() => forces['RED-GREEN'] = forceControls['RED-GREEN']);
-forcesFolder.add(forceControls, 'RED-BLUE', -2, 22, 0.1).onChange(() => forces['RED-BLUE'] = forceControls['RED-BLUE']);
-forcesFolder.add(forceControls, 'GREEN-RED', -2, 22, 0.1).onChange(() => forces['GREEN-RED'] = forceControls['GREEN-RED']);
-forcesFolder.add(forceControls, 'GREEN-GREEN', -2, 22, 0.1).onChange(() => forces['GREEN-GREEN'] = forceControls['GREEN-GREEN']);
-forcesFolder.add(forceControls, 'GREEN-BLUE', -2, 22, 0.1).onChange(() => forces['GREEN-BLUE'] = forceControls['GREEN-BLUE']);
-forcesFolder.add(forceControls, 'BLUE-RED', -2, 22, 0.1).onChange(() => forces['BLUE-RED'] = forceControls['BLUE-RED']);
-forcesFolder.add(forceControls, 'BLUE-BLUE', -2, 22, 0.1).onChange(() => forces['BLUE-BLUE'] = forceControls['BLUE-BLUE']);
-forcesFolder.add(forceControls, 'BLUE-GREEN', -2, 22, 0.1).onChange(() => forces['BLUE-GREEN'] = forceControls['BLUE-GREEN']);
+forcesFolder.add(forceControls, 'RED-RED', -2, 2, 0.1);
+forcesFolder.add(forceControls, 'RED-GREEN', -2, 2, 0.1);
+forcesFolder.add(forceControls, 'RED-BLUE', -2, 2, 0.1);
+forcesFolder.add(forceControls, 'GREEN-RED', -2, 2, 0.1);
+forcesFolder.add(forceControls, 'GREEN-GREEN', -2, 2, 0.1);
+forcesFolder.add(forceControls, 'GREEN-BLUE', -2, 2, 0.1);
+forcesFolder.add(forceControls, 'BLUE-RED', -2, 2, 0.1);
+forcesFolder.add(forceControls, 'BLUE-BLUE', -2, 2, 0.1);
+forcesFolder.add(forceControls, 'BLUE-GREEN', -2, 2, 0.1);
 forcesFolder.open();
 
 // const bokehFolder = gui.addFolder('Bokeh');
@@ -274,6 +265,9 @@ scene.add(redSystem);
 
 camera.position.z = 500;
 
+// Initialize RectAreaLight uniforms once
+RectAreaLightUniformsLib.init();
+
 // Setup bloom post-processing
 const composer = new EffectComposer(renderer);
 const renderPass = new RenderPass(scene, camera);
@@ -333,7 +327,7 @@ function getNearbyCells(x, y, z) {
 }
 
 function particleInteractions(deltaTime) {
-    const futureTime = deltaTime * 0.3;
+    const futureTime = deltaTime * 0.01;
 
     for (let i = 0; i < forceControls.particleCount; i++) {
         const p = particles[i];
@@ -356,13 +350,12 @@ function particleInteractions(deltaTime) {
                 const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
                 if (dist < forceControls.repulsionRange && dist > 0) {
-                    const typeNames = Object.keys(particleTypes);
                     const type1 = typeNames[p.type];
                     const type2 = typeNames[other.type];
 
-                    // Asymmetric (bidirectional) forces: use exact pair, no fallback swap
+                    // Asymmetric (bidirectional) forces: use exact pair from forceControls
                     const ruleKey = `${type1}-${type2}`;
-                    let rule = forces[ruleKey];
+                    let rule = forceControls[ruleKey];
                     if (rule === undefined) rule = 0;
 
                     const dirX = dx / dist;
@@ -374,15 +367,15 @@ function particleInteractions(deltaTime) {
                     const clampedDist = Math.max(dist, minDist);
 
                     let forceMagnitude = forceControls.repulsionStrength *
-                        Math.pow(1 - clampedDist / forceControls.repulsionRange, 2) * deltaTime
+                        Math.pow(1 - clampedDist / forceControls.repulsionRange, 2)
 
                     // Reduce force when particles are very close and attracting
-                    if (rule < 0 && dist < forceControls.repulsionRange * 0.05) {
+                    if (rule < 0 && dist < forceControls.repulsionRange * 0.09) {
                         forceMagnitude =  0// dist / (forceControls.repulsionRange * 0.2);
                     }
 
                     // Clamp final force to prevent instability
-                    const maxForce = 20000;
+                    const maxForce = 100;
                     const force = Math.max(-maxForce, Math.min(maxForce, forceMagnitude * rule));
 
                     p.velocity.x += dirX * force;
@@ -467,7 +460,6 @@ function animate() {
 
     updatePhysics(deltaTime);
     composer.render();
-    RectAreaLightUniformsLib.init();
 
     frames++;
     if (now >= lastTime + 1000) {

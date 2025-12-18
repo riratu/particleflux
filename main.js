@@ -6,7 +6,6 @@ import {RectAreaLightHelper} from 'three/addons/helpers/RectAreaLightHelper.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 
 const scene = new THREE.Scene();
@@ -44,7 +43,6 @@ const height = 300;
 const light = new THREE.RectAreaLight(color, intensity, width, height);
 light.position.set(0, 50, 0);
 scene.add(light);
-
 // const helper = new RectAreaLightHelper(light);
 // scene.add(helper);
 
@@ -92,8 +90,8 @@ let forceControls = {
     repulsionRange: 150,
     particleSize: 2,
     repulsionStrength: 100.2,
-    gravity: 400,
-    particleCount: 10000,
+    gravity: 1000,
+    particleCount: 6000,
     'RED-RED': 2,
     'RED-GREEN': 1.4,
     'RED-BLUE': 0.1,
@@ -126,6 +124,8 @@ forcesFolder.add(forceControls, 'BLUE-BLUE', -2, 2, 0.1);
 forcesFolder.add(forceControls, 'BLUE-GREEN', -2, 2, 0.1);
 forcesFolder.open();
 
+gui.close();
+
 // const bokehFolder = gui.addFolder('Bokeh');
 // bokehFolder.add(forceControls, 'bokehFocus', 0, 10000).onChange(() => {
 //     bokehPass.uniforms['focus'].value = forceControls.bokehFocus;
@@ -138,7 +138,7 @@ forcesFolder.open();
 // });
 // bokehFolder.open();
 
-cubeFolder.open();
+//cubeFolder.open();
 
 // Setup GPU Computation
 const WIDTH = Math.ceil(Math.sqrt(forceControls.particleCount));
@@ -446,6 +446,8 @@ scene.add(otherSystem);
 scene.add(redSystem);
 
 camera.position.z = 500;
+camera.far = 500000;
+camera.updateProjectionMatrix();
 
 // Initialize RectAreaLight uniforms once
 RectAreaLightUniformsLib.init();
@@ -457,8 +459,8 @@ composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    3.0,  // strength
-    1.0,  // radius
+    4.0,  // strength
+    1,  // radius
     0.0   // threshold (0 = bloom everything)
 );
 composer.addPass(bloomPass);

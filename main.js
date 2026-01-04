@@ -6,9 +6,15 @@ import {RectAreaLightHelper} from 'three/addons/helpers/RectAreaLightHelper.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
+import * as Tone from 'tone';
 
 const scene = new THREE.Scene();
+
+// Add fog for depth perception with red shift
+scene.fog = new THREE.Fog(0x550000, 50, 1000);
+
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({antialias: true});
 const oControls = new OrbitControls(camera, renderer.domElement);
@@ -57,8 +63,19 @@ window.oncontextmenu = function () {
     return false;
 }
 
+// Start audio context on user interaction
+document.addEventListener('click', async () => {
+    if (!audioContextStarted) {
+        console.log('Starting Tone.js...');
+        await Tone.start();
+        console.log('Tone.js started, context state:', Tone.context.state);
+        audioContextStarted = true;
+        initAudio();
+        console.log('Audio started');
+    }
+}, { once: true });
+
 // Placeholder declarations; actual counts are defined after forceControls
-let redRatio = 0.001; // far less red particles
 let redCount;
 let otherCount;
 let redGeometry;
@@ -77,6 +94,114 @@ const particleTypes = {
 // Cache type names array to avoid repeated allocation
 const typeNames = Object.keys(particleTypes);
 
+// Audio setup
+let audioInitialized = false;
+let audioContextStarted = false;
+let redNoises = []; // Array of sound sources for each red particle
+let reverb = null; // Shared reverb effect
+
+function initAudio() {
+    if (!audioInitialized && audioContextStarted) {
+        console.log('Initializing audio...');
+        console.log('Tone context state:', Tone.context.state);
+        console.log('Tone context destination:', Tone.Destination);
+
+        // Create a shared reverb effect
+        reverb = new Tone.Reverb({
+            decay: 10.5,
+            wet: 0.9,
+            preDelay: 0.01
+        });
+        reverb.toDestination();
+
+        // Different sound types to cycle through
+        const soundTypes = ['pink', 'white', 'brown'];
+
+        // Create different sound sources for each red particle
+        for (let i = 0; i < redCount; i++) {
+            let source;
+            const typeIndex = i % 3;
+            const synthType = i % 4;
+
+            // Alternate between noise and bass synth sounds
+            if (i % 2 === 0) {
+                // Use noise
+                source = new Tone.Noise(soundTypes[typeIndex]);
+                source.start();
+            } else {
+                // Use oscillators with bass frequencies and rich harmonic content
+                if (synthType === 0) {
+                    // FM Oscillator - creates rich bass harmonics
+                    source = new Tone.FMOscillator({
+                        frequency: 55,  // Low bass frequency (A1)
+                        type: 'sawtooth',
+                        modulationType: 'square',
+                        modulationIndex: 1,
+                        harmonicity: 2.5
+                    });
+                } else if (synthType === 1) {
+                    // AM Oscillator - creates rich bass harmonics
+                    source = new Tone.AMOscillator({
+                        frequency: 65,  // Low bass frequency (C2)
+                        type: 'square',
+                        modulationType: 'sawtooth',
+                        harmonicity: 1.5
+                    });
+                } else if (synthType === 2) {
+                    // Fat Oscillator - thick bass sound
+                    source = new Tone.FatOscillator({
+                        frequency: 82,  // Low bass frequency (E2)
+                        type: 'sawtooth',
+                        spread: 20,
+                        count: 3
+                    });
+                } else {
+                    // Pulse Oscillator - deep bass pulse
+                    source = new Tone.PulseOscillator({
+                        frequency: 73,  // Low bass frequency (D2)
+                        width: 0.3
+                    });
+                }
+                source.start();
+            }
+
+            const filter = new Tone.Filter({
+                type: 'bandpass',
+                frequency: 200,
+                Q: 3,
+                rolloff: -24
+            });
+
+            const volume = new Tone.Volume(-60); // Start very quiet
+
+            const panner = new Tone.Panner3D({
+                panningModel: 'HRTF',
+                positionX: 0,
+                positionY: 0,
+                positionZ: 0
+            });
+
+            // Connect: source -> filter -> volume -> panner -> reverb -> output
+            source.connect(filter);
+            filter.connect(volume);
+            volume.connect(panner);
+            panner.connect(reverb);
+
+            redNoises.push({
+                source,
+                filter,
+                volume,
+                panner,
+                isOscillator: i % 2 === 1
+            });
+        }
+
+        console.log(`Created ${redCount} varied sound sources for red particles`);
+        audioInitialized = true;
+        console.log('Audio initialized - sounds started');
+    }
+}
+
 // Single source of truth for forces
 let forceControls = {
     repulsionRange: 150,
@@ -84,6 +209,9 @@ let forceControls = {
     repulsionStrength: 1,
     gravity: 247,
     particleCount: 6000,
+    soundSpeedThreshold: 100,
+    soundFrequency: 440,
+    soundEnabled: true,
     'RED-RED': 2,
     'RED-GREEN': -0.7,
     'RED-BLUE': 0.5,
@@ -116,6 +244,12 @@ forcesFolder.add(forceControls, 'BLUE-BLUE', -2, 2, 0.1);
 forcesFolder.add(forceControls, 'BLUE-GREEN', -2, 2, 0.1);
 forcesFolder.open();
 
+const soundFolder = gui.addFolder('Sound');
+soundFolder.add(forceControls, 'soundEnabled');
+soundFolder.add(forceControls, 'soundSpeedThreshold', 10, 1000);
+soundFolder.add(forceControls, 'soundFrequency', 100, 2000);
+soundFolder.open();
+
 gui.close();
 
 // const bokehFolder = gui.addFolder('Bokeh');
@@ -142,7 +276,7 @@ const dtPosition = gpuCompute.createTexture();
 const dtVelocity = gpuCompute.createTexture();
 
 // Now that forceControls is known, allocate buffers and geometries
-redCount = Math.max(1, Math.floor(redRatio * forceControls.particleCount));
+redCount = 3; // Exactly 3 red balls
 otherCount = forceControls.particleCount - redCount;
 redGeometry = new THREE.BufferGeometry();
 otherGeometry = new THREE.BufferGeometry();
@@ -416,7 +550,7 @@ const otherMaterial = new THREE.PointsMaterial({
     map: texture,
     vertexColors: true,
     transparent: true,
-    opacity: 0.8,
+    opacity: 0.1,
     sizeAttenuation: true,
     alphaTest: 0.01,
     depthWrite: false
@@ -447,6 +581,43 @@ const otherSystem = new THREE.Points(otherGeometry, otherMaterial);
 scene.add(otherSystem);
 scene.add(redSystem);
 
+// Create 3D starfield background
+const starCount = 2000;
+const starGeometry = new THREE.BufferGeometry();
+const starPositions = new Float32Array(starCount * 3);
+const starColors = new Float32Array(starCount * 3);
+
+for (let i = 0; i < starCount; i++) {
+    // Distribute stars in a large sphere around the scene
+    const radius = 800 + Math.random() * 400;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+
+    starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+    starPositions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+    starPositions[i * 3 + 2] = radius * Math.cos(phi);
+
+    // White stars with slight brightness variation
+    const brightness = 0.5 + Math.random() * 0.5;
+    starColors[i * 3] = brightness;
+    starColors[i * 3 + 1] = brightness;
+    starColors[i * 3 + 2] = brightness;
+}
+
+starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+
+const starMaterial = new THREE.PointsMaterial({
+    size: 1.5,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.8,
+    sizeAttenuation: true
+});
+
+const stars = new THREE.Points(starGeometry, starMaterial);
+scene.add(stars);
+
 camera.position.z = 350;
 camera.far = 500000;
 camera.updateProjectionMatrix();
@@ -461,9 +632,9 @@ composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    2.0,  // strength
-    1,  // radius
-    0.0   // threshold (0 = bloom everything)
+    0.7,  // strength
+    0.00001,  // radius
+    0.1   // threshold (0 = bloom everything)
 );
 composer.addPass(bloomPass);
 
@@ -550,6 +721,17 @@ function updatePhysicsGPU(deltaTime) {
         posArray
     );
 
+    // Read back velocities for sound control
+    const velocityArray = new Float32Array(WIDTH * WIDTH * 4);
+    renderer.readRenderTargetPixels(
+        gpuCompute.getCurrentRenderTarget(velocityVariable),
+        0, 0, WIDTH, WIDTH,
+        velocityArray
+    );
+
+    // Track red particle speeds for audio control
+    const redSpeeds = [];
+
     // Update particle position buffers
     for (let i = 0; i < forceControls.particleCount; i++) {
         const p = particles[i];
@@ -558,6 +740,20 @@ function updatePhysicsGPU(deltaTime) {
         p.position.x = posArray[i4 + 0];
         p.position.y = posArray[i4 + 1];
         p.position.z = posArray[i4 + 2];
+
+        // Update velocity and track red particle speeds
+        const vx = velocityArray[i4 + 0];
+        const vy = velocityArray[i4 + 1];
+        const vz = velocityArray[i4 + 2];
+        const speed = Math.sqrt(vx * vx + vy * vy + vz * vz);
+
+        p.velocity.x = vx;
+        p.velocity.y = vy;
+        p.velocity.z = vz;
+
+        if (p.bufferKind === 'RED') {
+            redSpeeds.push({ speed, bufferIndex: p.bufferIndex });
+        }
 
         // Write to correct rendering buffer
         if (p.bufferKind === 'RED') {
@@ -573,6 +769,57 @@ function updatePhysicsGPU(deltaTime) {
         }
     }
 
+    // Control audio for every red particle
+    if (forceControls.soundEnabled && redSpeeds.length > 0 && audioContextStarted) {
+        // Initialize audio on first use
+        if (!audioInitialized) {
+            initAudio();
+        }
+
+        const now = Tone.now();
+        const minFreq = 100;
+        const maxFreq = forceControls.soundFrequency * 2;
+        const minVol = -40;
+        const maxVol = -10;
+
+        // Update each red particle's audio
+        for (let i = 0; i < redSpeeds.length; i++) {
+            const { speed, bufferIndex } = redSpeeds[i];
+
+            // Get the particle to calculate distance
+            const particle = particles.find(p => p.bufferKind === 'RED' && p.bufferIndex === bufferIndex);
+            if (!particle) continue;
+
+            const audioChannel = redNoises[bufferIndex];
+
+            if (audioChannel) {
+                // Update 3D panner position (scale down for reasonable audio space)
+                const scale = 0.01;
+                audioChannel.panner.positionX.linearRampToValueAtTime(particle.position.x * scale, now + 0.05);
+                audioChannel.panner.positionY.linearRampToValueAtTime(particle.position.y * scale, now + 0.05);
+                audioChannel.panner.positionZ.linearRampToValueAtTime(particle.position.z * scale, now + 0.05);
+
+                // Map speed to filter frequency and source frequency (for oscillators)
+                const speedNormalized = Math.min(speed / forceControls.soundSpeedThreshold, 2);
+                let targetFreq = minFreq + (maxFreq - minFreq) * speedNormalized;
+
+                // Update filter frequency
+                audioChannel.filter.frequency.linearRampToValueAtTime(targetFreq, now + 0.05);
+
+                // If it's an oscillator, also update its base frequency
+                // if (audioChannel.isOscillator) {
+                //     audioChannel.source.frequency.linearRampToValueAtTime(targetFreq * 0.5, now + 0.05);
+                // }
+                //
+                // Map speed to volume (louder when faster)
+                let targetVol = minVol + (maxVol - minVol) * speedNormalized;
+
+                // Smooth volume changes
+                audioChannel.volume.volume.linearRampToValueAtTime(targetVol, now + 0.05);
+            }
+        }
+    }
+
     redGeometry.attributes.position.needsUpdate = true;
     otherGeometry.attributes.position.needsUpdate = true;
 }
@@ -585,6 +832,9 @@ function animate() {
     const now = performance.now();
     const deltaTime = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
+
+    // Slowly rotate the whole scene
+    scene.rotation.y += 0.003;
 
     updatePhysicsGPU(deltaTime);
     composer.render();

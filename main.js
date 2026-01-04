@@ -9,6 +9,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import * as Tone from 'tone';
+import velocityShader from './shaders/velocity.glsl?raw';
+import positionShader from './shaders/position.glsl?raw';
 
 const scene = new THREE.Scene();
 
@@ -108,68 +110,33 @@ function initAudio() {
 
         // Create a shared reverb effect
         reverb = new Tone.Reverb({
-            decay: 10.5,
+            decay: 20.5,
             wet: 0.9,
             preDelay: 0.01
         });
         reverb.toDestination();
 
-        // Different sound types to cycle through
-        const soundTypes = ['pink', 'white', 'brown'];
+        // Sound files for each red particle
+        const soundFiles = [
+            'sounds/7 Drone - Gittiliveset.wav',
+            'sounds/atmos verb 120bpm 32t fm11.wav',
+            'sounds/Gittipad.wav'
+        ];
 
-        // Create different sound sources for each red particle
+        // Create audio players for each red particle
         for (let i = 0; i < redCount; i++) {
-            let source;
-            const typeIndex = i % 3;
-            const synthType = i % 4;
-
-            // Alternate between noise and bass synth sounds
-            if (i % 2 === 0) {
-                // Use noise
-                source = new Tone.Noise(soundTypes[typeIndex]);
-                source.start();
-            } else {
-                // Use oscillators with bass frequencies and rich harmonic content
-                if (synthType === 0) {
-                    // FM Oscillator - creates rich bass harmonics
-                    source = new Tone.FMOscillator({
-                        frequency: 55,  // Low bass frequency (A1)
-                        type: 'sawtooth',
-                        modulationType: 'square',
-                        modulationIndex: 1,
-                        harmonicity: 2.5
-                    });
-                } else if (synthType === 1) {
-                    // AM Oscillator - creates rich bass harmonics
-                    source = new Tone.AMOscillator({
-                        frequency: 65,  // Low bass frequency (C2)
-                        type: 'square',
-                        modulationType: 'sawtooth',
-                        harmonicity: 1.5
-                    });
-                } else if (synthType === 2) {
-                    // Fat Oscillator - thick bass sound
-                    source = new Tone.FatOscillator({
-                        frequency: 82,  // Low bass frequency (E2)
-                        type: 'sawtooth',
-                        spread: 20,
-                        count: 3
-                    });
-                } else {
-                    // Pulse Oscillator - deep bass pulse
-                    source = new Tone.PulseOscillator({
-                        frequency: 73,  // Low bass frequency (D2)
-                        width: 0.3
-                    });
-                }
-                source.start();
-            }
+            // Create a looping player for the sound file
+            const player = new Tone.Player({
+                url: soundFiles[i % soundFiles.length],
+                loop: true,
+                autostart: true
+            });
 
             const filter = new Tone.Filter({
-                type: 'bandpass',
-                frequency: 200,
+                type: "lowpass",
+                frequency: 100,
                 Q: 3,
-                rolloff: -24
+                rolloff: -48
             });
 
             const volume = new Tone.Volume(-60); // Start very quiet
@@ -181,22 +148,22 @@ function initAudio() {
                 positionZ: 0
             });
 
-            // Connect: source -> filter -> volume -> panner -> reverb -> output
-            source.connect(filter);
+            // Connect: player -> filter -> volume -> panner -> reverb -> output
+            player.connect(filter);
             filter.connect(volume);
-            volume.connect(panner);
-            panner.connect(reverb);
+            volume.connect(reverb);
+            //panner.connect(reverb);
 
             redNoises.push({
-                source,
+                source: player,
                 filter,
                 volume,
                 panner,
-                isOscillator: i % 2 === 1
+                isOscillator: false
             });
         }
 
-        console.log(`Created ${redCount} varied sound sources for red particles`);
+        console.log(`Created ${redCount} audio players for red particles`);
         audioInitialized = true;
         console.log('Audio initialized - sounds started');
     }
@@ -209,7 +176,7 @@ let forceControls = {
     repulsionStrength: 1,
     gravity: 247,
     particleCount: 6000,
-    soundSpeedThreshold: 100,
+    soundSpeedMax: 100,
     soundFrequency: 440,
     soundEnabled: true,
     'RED-RED': 2,
@@ -246,8 +213,8 @@ forcesFolder.open();
 
 const soundFolder = gui.addFolder('Sound');
 soundFolder.add(forceControls, 'soundEnabled');
-soundFolder.add(forceControls, 'soundSpeedThreshold', 10, 1000);
-soundFolder.add(forceControls, 'soundFrequency', 100, 2000);
+soundFolder.add(forceControls, 'soundSpeedMax', 5, 500);
+soundFolder.add(forceControls, 'soundFrequency', 100, 10000);
 soundFolder.open();
 
 gui.close();
@@ -365,136 +332,6 @@ redGeometry.setAttribute('color', new THREE.BufferAttribute(redColors, 3));
 otherGeometry.setAttribute('position', new THREE.BufferAttribute(otherPositions, 3));
 otherGeometry.setAttribute('color', new THREE.BufferAttribute(otherColors, 3));
 
-// Velocity computation shader - calculates forces between particles
-const velocityShader = `
-    uniform float deltaTime;
-    uniform float repulsionRange;
-    uniform float repulsionStrength;
-    uniform float gravity;
-    uniform vec3 center;
-    uniform float damping;
-    uniform float maxSpeed;
-    uniform vec2 mouse;
-    uniform float spaceAttraction;
-    uniform float maxForce;
-
-    // Force matrix: forces[from][to]
-    uniform mat3 forceMatrix; // 3x3 for RED, GREEN, BLUE interactions
-
-    // Helper to get grid cell from position
-    vec3 getGridCell(vec3 pos) {
-        return floor(pos / repulsionRange);
-    }
-
-    void main() {
-        vec2 uv = gl_FragCoord.xy / resolution.xy;
-        vec4 tmpPos = texture2D(texturePosition, uv);
-        vec3 position = tmpPos.xyz;
-        float particleType = tmpPos.w;
-
-        vec4 tmpVel = texture2D(textureVelocity, uv);
-        vec3 velocity = tmpVel.xyz;
-
-        vec3 force = vec3(0.0);
-
-        // Get current particle's grid cell
-        vec3 gridCell = getGridCell(position);
-        float searchRadius = 1.0;
-
-        // Particle-particle interactions with spatial optimization
-        for (float y = 0.0; y < resolution.y; y++) {
-            for (float x = 0.0; x < resolution.x; x++) {
-                vec2 otherUV = vec2(x, y) / resolution.xy;
-                vec4 otherPos = texture2D(texturePosition, otherUV);
-                vec3 otherPosition = otherPos.xyz;
-                float otherType = otherPos.w;
-
-                if (otherUV == uv) continue;
-
-                // Spatial grid optimization: skip if particle is too far
-                vec3 otherGridCell = getGridCell(otherPosition);
-                vec3 gridDiff = abs(gridCell - otherGridCell);
-
-                // Skip if not in neighboring cells (check 3x3x3 = 27 cells)
-                if (gridDiff.x > searchRadius || gridDiff.y > searchRadius || gridDiff.z > searchRadius) {
-                    continue;
-                }
-
-                vec3 diff = position - otherPosition;
-                float dist = length(diff);
-
-                if (dist < repulsionRange && dist > 0.0) {
-                    vec3 dir = diff / dist;
-
-                    // Get force rule from matrix
-                    int typeIdx = int(particleType);
-                    int otherIdx = int(otherType);
-                    float rule = forceMatrix[typeIdx][otherIdx];
-
-                    // Clamp distance to prevent extreme forces
-                    float minDist = repulsionRange * 0.05;
-                    float clampedDist = max(dist, minDist);
-
-                    float forceMagnitude = repulsionStrength *
-                        pow(1.0 - clampedDist / repulsionRange, 2.0);
-
-                    // Reduce force when particles are very close and attracting
-                    if (rule < 0.0 && dist < repulsionRange * 0.09) {
-                        forceMagnitude = 0.0;
-                    }
-
-                    float f = clamp(forceMagnitude * rule, -maxForce, maxForce);
-                    force += dir * f;
-                }
-            }
-        }
-
-        // Gravity towards center
-        vec3 toCenter = center - position;
-        float distToCenter = length(toCenter);
-        if (distToCenter > 10.0) {
-            vec3 dirToCenter = toCenter / distToCenter;
-            force += dirToCenter * gravity * deltaTime;
-        }
-
-        // Mouse attraction
-        if (spaceAttraction > 0.0) {
-            vec2 toMouse = mouse - position.xy;
-            force.xy += toMouse * spaceAttraction * deltaTime;
-        }
-
-        // Update velocity
-        velocity += force;
-        velocity *= damping;
-
-        // Clamp speed
-        float speed = length(velocity);
-        if (speed > maxSpeed) {
-            velocity = normalize(velocity) * maxSpeed;
-        }
-
-        gl_FragColor = vec4(velocity, 0.0);
-    }
-`;
-
-// Position computation shader - integrates velocity into position
-const positionShader = `
-    uniform float deltaTime;
-
-    void main() {
-        vec2 uv = gl_FragCoord.xy / resolution.xy;
-        vec4 tmpPos = texture2D(texturePosition, uv);
-        vec3 position = tmpPos.xyz;
-        float particleType = tmpPos.w;
-
-        vec3 velocity = texture2D(textureVelocity, uv).xyz;
-
-        position += velocity * deltaTime;
-
-        gl_FragColor = vec4(position, particleType);
-    }
-`;
-
 // Create computation variables
 const velocityVariable = gpuCompute.addVariable('textureVelocity', velocityShader, dtVelocity);
 const positionVariable = gpuCompute.addVariable('texturePosition', positionShader, dtPosition);
@@ -604,11 +441,11 @@ for (let i = 0; i < starCount; i++) {
     starColors[i * 3 + 2] = brightness;
 }
 
-starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 5));
+starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 5));
 
 const starMaterial = new THREE.PointsMaterial({
-    size: 1.5,
+    size: 10.5,
     vertexColors: true,
     transparent: true,
     opacity: 0.8,
@@ -779,7 +616,7 @@ function updatePhysicsGPU(deltaTime) {
         const now = Tone.now();
         const minFreq = 100;
         const maxFreq = forceControls.soundFrequency * 2;
-        const minVol = -40;
+        const minVol = -15;
         const maxVol = -10;
 
         // Update each red particle's audio
@@ -800,7 +637,7 @@ function updatePhysicsGPU(deltaTime) {
                 audioChannel.panner.positionZ.linearRampToValueAtTime(particle.position.z * scale, now + 0.05);
 
                 // Map speed to filter frequency and source frequency (for oscillators)
-                const speedNormalized = Math.min(speed / forceControls.soundSpeedThreshold, 2);
+                const speedNormalized = Math.min(speed / forceControls.soundSpeedMax, 2);
                 let targetFreq = minFreq + (maxFreq - minFreq) * speedNormalized;
 
                 // Update filter frequency
@@ -813,6 +650,7 @@ function updatePhysicsGPU(deltaTime) {
                 //
                 // Map speed to volume (louder when faster)
                 let targetVol = minVol + (maxVol - minVol) * speedNormalized;
+                //let targetVol = maxVol
 
                 // Smooth volume changes
                 audioChannel.volume.volume.linearRampToValueAtTime(targetVol, now + 0.05);

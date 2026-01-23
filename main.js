@@ -6,6 +6,7 @@ import {RectAreaLightHelper} from 'three/addons/helpers/RectAreaLightHelper.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import * as Tone from 'tone';
@@ -22,6 +23,10 @@ const renderer = new THREE.WebGLRenderer({antialias: true});
 const oControls = new OrbitControls(camera, renderer.domElement);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
+
+// HDR tone mapping to prevent bloom blow-out
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;  // Adjust this to control overall brightness
 document.body.appendChild(renderer.domElement);
 
 let lastTime = performance.now();
@@ -456,7 +461,7 @@ const otherMaterial = new THREE.PointsMaterial({
     map: texture,
     vertexColors: true,
     transparent: true,
-    opacity: 0.1,
+    opacity: 0.5,
     sizeAttenuation: true,
     alphaTest: 0.01,
     depthWrite: false
@@ -538,11 +543,15 @@ composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.7,  // strength
-    0.00001,  // radius
-    0.1   // threshold (0 = bloom everything)
+    0.5,   // strength (can be higher now with tone mapping)
+    0.8,   // radius (spread of the bloom)
+    0.1   // threshold (only bloom bright pixels - HDR style)
 );
 composer.addPass(bloomPass);
+
+// OutputPass for proper sRGB encoding after HDR bloom
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
 
 // const bokehPass = new BokehPass( scene, camera, {
 //     focus: forceControls.bokehFocus,

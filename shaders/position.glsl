@@ -10,5 +10,12 @@ void main() {
 
     position += velocity * deltaTime;
 
+    // Clamp position to stay within 500 units from center
+    float maxRadius = 200.0;
+    float dist = length(position);
+    if (dist > maxRadius) {
+        position = normalize(position) * maxRadius;
+    }
+
     gl_FragColor = vec4(position, particleType);
 }

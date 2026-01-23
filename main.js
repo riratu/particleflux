@@ -217,6 +217,18 @@ soundFolder.add(forceControls, 'soundSpeedMax', 5, 500);
 soundFolder.add(forceControls, 'soundFrequency', 100, 10000);
 soundFolder.open();
 
+// Randomize particle forces using their min/max
+function randomizeForces() {
+    forcesFolder.__controllers.forEach(ctrl => {
+        if (typeof ctrl.__min === 'number' && typeof ctrl.__max === 'number') {
+            const value = ctrl.__min + Math.random() * (ctrl.__max - ctrl.__min);
+            ctrl.setValue(value);
+        }
+    });
+}
+
+gui.add({ randomize: randomizeForces }, 'randomize').name('Randomize (R)');
+
 gui.close();
 
 // const bokehFolder = gui.addFolder('Bokeh');
@@ -362,12 +374,69 @@ if (error !== null) {
 
 const keysPressed = { };
 
+// Map keys 1-9 and 0 to GUI properties for temporary manipulation
+const keyToProperty = {
+    'Digit1': 'RED-RED',
+    'Digit2': 'RED-GREEN',
+    'Digit3': 'RED-BLUE',
+    'Digit4': 'GREEN-RED',
+    'Digit5': 'GREEN-GREEN',
+    'Digit6': 'GREEN-BLUE',
+    'Digit7': 'BLUE-RED',
+    'Digit8': 'BLUE-BLUE',
+    'Digit9': 'BLUE-GREEN',
+    'Digit0': 'gravity'
+};
+
+// Store original values when keys are pressed
+const originalValues = {};
+
+// Boosted values when keys are held (set to max for forces, high for gravity)
+const boostedValues = {
+    'RED-RED': 20,
+    'RED-GREEN': 2,
+    'RED-BLUE': -10,
+    'GREEN-RED': 20,
+    'GREEN-GREEN': 6,
+    'GREEN-BLUE': 20,
+    'BLUE-RED': 20,
+    'BLUE-BLUE': 20,
+    'BLUE-GREEN': 20,
+    'gravity': 4000
+};
+
 document.addEventListener('keydown', (event) => {
     keysPressed[event.code] = true;
+
+    // R key to randomize
+    if (event.code === 'KeyR') {
+        randomizeForces();
+    }
+
+    // Handle number keys for GUI manipulation
+    const property = keyToProperty[event.code];
+    if (property && !originalValues.hasOwnProperty(event.code)) {
+        // Store original value
+        originalValues[event.code] = forceControls[property];
+        // Set boosted value
+        forceControls[property] = boostedValues[property];
+        // Update GUI display
+        gui.updateDisplay();
+        console.log(event.code)
+    }
 });
 
 document.addEventListener('keyup', (event) => {
     keysPressed[event.code] = false;
+
+    // Restore original value when key is released
+    const property = keyToProperty[event.code];
+    if (property && originalValues.hasOwnProperty(event.code)) {
+        forceControls[property] = originalValues[event.code];
+        delete originalValues[event.code];
+        // Update GUI display
+        gui.updateDisplay();
+    }
 });
 
 // Create circular texture

@@ -1,4 +1,5 @@
 uniform float deltaTime;
+uniform float maxRadius;
 
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -10,8 +11,7 @@ void main() {
 
     position += velocity * deltaTime;
 
-    // Clamp position to stay within 500 units from center
-    float maxRadius = 200.0;
+    // Clamp position to stay within maxRadius units from center
     float dist = length(position);
     if (dist > maxRadius) {
         position = normalize(position) * maxRadius;

@@ -184,6 +184,7 @@ let forceControls = {
     soundSpeedMax: 100,
     soundFrequency: 440,
     soundEnabled: true,
+    maxRadius: 200.0,
     'RED-RED': 2,
     'RED-GREEN': -0.7,
     'RED-BLUE': 0.5,
@@ -202,6 +203,7 @@ cubeFolder.add(forceControls, 'repulsionStrength', 0.1, 1000);
 cubeFolder.add(forceControls, 'repulsionRange', 1, 500);
 cubeFolder.add(forceControls, 'gravity', 0.01, 2000);
 cubeFolder.add(forceControls, 'particleSize', 0.1, 20).onChange(() => updateParticleSize());
+cubeFolder.add(forceControls, 'maxRadius', 1, 1000);
 cubeFolder.open();
 
 const forcesFolder = gui.addFolder('Particle Forces');
@@ -371,6 +373,7 @@ velocityVariable.material.uniforms['maxForce'] = { value: 300.0 };
 velocityVariable.material.uniforms['forceMatrix'] = { value: new THREE.Matrix3() };
 
 positionVariable.material.uniforms['deltaTime'] = { value: 0.0 };
+positionVariable.material.uniforms['maxRadius'] = { value: forceControls.maxRadius };
 
 const error = gpuCompute.init();
 if (error !== null) {
@@ -677,6 +680,7 @@ function updatePhysicsGPU(deltaTime) {
     updateForceMatrix();
 
     positionVariable.material.uniforms['deltaTime'].value = deltaTime;
+    positionVariable.material.uniforms['maxRadius'].value = forceControls.maxRadius;
 
     // Compute on GPU
     gpuCompute.compute();

@@ -174,8 +174,8 @@ function initAudio() {
     }
 }
 
-// Single source of truth for forces
-let forceControls = {
+// Default values for forces
+const defaultForceControls = {
     repulsionRange: 150,
     particleSize: 2,
     repulsionStrength: 1,
@@ -196,32 +196,58 @@ let forceControls = {
     'BLUE-GREEN': -0.3
 };
 
+// Load settings from localStorage or use defaults
+function loadSettings() {
+    try {
+        const saved = localStorage.getItem('particleSettings');
+        if (saved) {
+            return { ...defaultForceControls, ...JSON.parse(saved) };
+        }
+    } catch (e) {
+        console.warn('Failed to load settings from localStorage:', e);
+    }
+    return { ...defaultForceControls };
+}
+
+// Save settings to localStorage
+function saveSettings() {
+    try {
+        localStorage.setItem('particleSettings', JSON.stringify(forceControls));
+    } catch (e) {
+        console.warn('Failed to save settings to localStorage:', e);
+    }
+}
+
+// Single source of truth for forces
+let forceControls = loadSettings();
+
 // Update GUI
 const gui = new GUI();
-const cubeFolder = gui.addFolder('Cube');
-cubeFolder.add(forceControls, 'repulsionStrength', 0.1, 1000);
-cubeFolder.add(forceControls, 'repulsionRange', 1, 500);
-cubeFolder.add(forceControls, 'gravity', 0.01, 2000);
-cubeFolder.add(forceControls, 'particleSize', 0.1, 20).onChange(() => updateParticleSize());
-cubeFolder.add(forceControls, 'maxRadius', 1, 1000);
-cubeFolder.open();
+const generalFolder = gui.addFolder('General');
+generalFolder.add(forceControls, 'repulsionStrength', 0.1, 1000).onChange(saveSettings);
+generalFolder.add(forceControls, 'repulsionRange', 1, 500).onChange(saveSettings);
+generalFolder.add(forceControls, 'gravity', 0.01, 2000).onChange(saveSettings);
+generalFolder.add(forceControls, 'particleSize', 0.1, 20).onChange(() => { updateParticleSize(); saveSettings(); });
+generalFolder.add(forceControls, 'maxRadius', 1, 1000).onChange(saveSettings);
+generalFolder.add(forceControls, 'particleCount', 100, 50000, 100).onChange(saveSettings).name('Particle Count');
+generalFolder.add({ reload: reloadParticles }, 'reload').name('Apply Particle count');
 
 const forcesFolder = gui.addFolder('Particle Forces');
-forcesFolder.add(forceControls, 'RED-RED', -2, 2, 0.1);
-forcesFolder.add(forceControls, 'RED-GREEN', -2, 2, 0.1);
-forcesFolder.add(forceControls, 'RED-BLUE', -2, 2, 0.1);
-forcesFolder.add(forceControls, 'GREEN-RED', -2, 2, 0.1);
-forcesFolder.add(forceControls, 'GREEN-GREEN', -2, 2, 0.1);
-forcesFolder.add(forceControls, 'GREEN-BLUE', -2, 2, 0.1);
-forcesFolder.add(forceControls, 'BLUE-RED', -2, 2, 0.1);
-forcesFolder.add(forceControls, 'BLUE-BLUE', -2, 2, 0.1);
-forcesFolder.add(forceControls, 'BLUE-GREEN', -2, 2, 0.1);
+forcesFolder.add(forceControls, 'RED-RED', -2, 2, 0.1).onChange(saveSettings);
+forcesFolder.add(forceControls, 'RED-GREEN', -2, 2, 0.1).onChange(saveSettings);
+forcesFolder.add(forceControls, 'RED-BLUE', -2, 2, 0.1).onChange(saveSettings);
+forcesFolder.add(forceControls, 'GREEN-RED', -2, 2, 0.1).onChange(saveSettings);
+forcesFolder.add(forceControls, 'GREEN-GREEN', -2, 2, 0.1).onChange(saveSettings);
+forcesFolder.add(forceControls, 'GREEN-BLUE', -2, 2, 0.1).onChange(saveSettings);
+forcesFolder.add(forceControls, 'BLUE-RED', -2, 2, 0.1).onChange(saveSettings);
+forcesFolder.add(forceControls, 'BLUE-BLUE', -2, 2, 0.1).onChange(saveSettings);
+forcesFolder.add(forceControls, 'BLUE-GREEN', -2, 2, 0.1).onChange(saveSettings);
 forcesFolder.open();
 
 const soundFolder = gui.addFolder('Sound');
-soundFolder.add(forceControls, 'soundEnabled');
-soundFolder.add(forceControls, 'soundSpeedMax', 5, 500);
-soundFolder.add(forceControls, 'soundFrequency', 100, 10000);
+soundFolder.add(forceControls, 'soundEnabled').onChange(saveSettings);
+soundFolder.add(forceControls, 'soundSpeedMax', 5, 500).onChange(saveSettings);
+soundFolder.add(forceControls, 'soundFrequency', 100, 10000).onChange(saveSettings);
 soundFolder.open();
 
 // Randomize particle forces using their min/max
@@ -232,9 +258,24 @@ function randomizeForces() {
             ctrl.setValue(value);
         }
     });
+    saveSettings();
+}
+
+// Reset to default values
+function resetToDefaults() {
+    Object.assign(forceControls, defaultForceControls);
+    gui.updateDisplay();
+    saveSettings();
+    reloadParticles();
+}
+
+// Reload particles with current settings (for particle count changes)
+function reloadParticles() {
+    location.reload();
 }
 
 gui.add({ randomize: randomizeForces }, 'randomize').name('Randomize (R)');
+gui.add({ reset: resetToDefaults }, 'reset').name('Reset to Defaults');
 
 gui.close();
 
@@ -250,7 +291,7 @@ gui.close();
 // });
 // bokehFolder.open();
 
-//cubeFolder.open();
+//generalFolder.open();
 
 // Setup GPU Computation
 const WIDTH = Math.ceil(Math.sqrt(forceControls.particleCount));
@@ -638,7 +679,7 @@ function getGridKey(x, y, z) {
 
 function buildSpatialGrid() {
     spatialGrid.clear();
-    for (let i = 0; i < forceControls.particleCount; i++) {
+    for (let i = 0; i < particles.length; i++) {
         const key = getGridKey(particles[i].position.x, particles[i].position.y, particles[i].position.z);
         if (!spatialGrid.has(key)) {
             spatialGrid.set(key, []);
@@ -704,7 +745,7 @@ function updatePhysicsGPU(deltaTime) {
     const redSpeeds = [];
 
     // Update particle position buffers
-    for (let i = 0; i < forceControls.particleCount; i++) {
+    for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
         const i4 = i * 4;
 

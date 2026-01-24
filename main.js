@@ -597,43 +597,6 @@ const otherSystem = new THREE.Points(otherGeometry, otherMaterial);
 scene.add(otherSystem);
 scene.add(redSystem);
 
-// Create 3D starfield background
-const starCount = 2000;
-const starGeometry = new THREE.BufferGeometry();
-const starPositions = new Float32Array(starCount * 3);
-const starColors = new Float32Array(starCount * 3);
-
-for (let i = 0; i < starCount; i++) {
-    // Distribute stars in a large sphere around the scene
-    const radius = 800 + Math.random() * 400;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-
-    starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-    starPositions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-    starPositions[i * 3 + 2] = radius * Math.cos(phi);
-
-    // White stars with slight brightness variation
-    const brightness = 0.5 + Math.random() * 0.5;
-    starColors[i * 3] = brightness;
-    starColors[i * 3 + 1] = brightness;
-    starColors[i * 3 + 2] = brightness;
-}
-
-starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 5));
-starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 5));
-
-const starMaterial = new THREE.PointsMaterial({
-    size: 10.5,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.8,
-    sizeAttenuation: true
-});
-
-const stars = new THREE.Points(starGeometry, starMaterial);
-scene.add(stars);
-
 camera.position.z = 350;
 camera.far = 500000;
 camera.updateProjectionMatrix();

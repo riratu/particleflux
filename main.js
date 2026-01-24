@@ -45,6 +45,7 @@ let mouseX = window.innerWidth / 2;
 let mouseY = window.innerHeight / 2;
 let mouseButtonsClicked = [];
 let spatialGrid = new Map();
+let currentMaxRadius = 200.0; // Interpolated maxRadius for smooth transitions
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 5);
 scene.add(ambientLight);
@@ -94,9 +95,32 @@ let otherColors;
 
 const particleTypes = {
     RED: { color: 0xFFAAAA, id: 0 },    // Desaturated light red
-    GREEN: { color: 0xAAFFAA, id: 1 },  // Desaturated light green
-    BLUE: { color: 0xAAAAFF, id: 2 }    // Desaturated light blue
+    GREEN: { color: 0xFFFF00, id: 1 },  // Desaturated light green
+    BLUE: { color: 0xCCCCEE, id: 2 }    // More desaturated light blue
 };
+
+// HSL to RGB conversion (h: 0-1, s: 0-1, l: 0-1) -> [r, g, b] (0-1)
+function hslToRgb(h, s, l) {
+    let r, g, b;
+    if (s === 0) {
+        r = g = b = l;
+    } else {
+        const hue2rgb = (p, q, t) => {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1/6) return p + (q - p) * 6 * t;
+            if (t < 1/2) return q;
+            if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            return p;
+        };
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+    }
+    return [r, g, b];
+}
 
 // Cache type names array to avoid repeated allocation
 const typeNames = Object.keys(particleTypes);
@@ -227,10 +251,11 @@ const generalFolder = gui.addFolder('General');
 generalFolder.add(forceControls, 'repulsionStrength', 0.1, 1000).onChange(saveSettings);
 generalFolder.add(forceControls, 'repulsionRange', 1, 500).onChange(saveSettings);
 generalFolder.add(forceControls, 'gravity', 0.01, 2000).onChange(saveSettings);
-generalFolder.add(forceControls, 'particleSize', 0.1, 20).onChange(() => { updateParticleSize(); saveSettings(); });
+generalFolder.add(forceControls, 'particleSize', 0.1, 3).onChange(() => { updateParticleSize(); saveSettings(); });
 generalFolder.add(forceControls, 'maxRadius', 1, 1000).onChange(saveSettings);
 generalFolder.add(forceControls, 'particleCount', 100, 50000, 100).onChange(saveSettings).name('Particle Count');
 generalFolder.add({ reload: reloadParticles }, 'reload').name('Apply Particle count');
+generalFolder.open()
 
 const forcesFolder = gui.addFolder('Particle Forces');
 forcesFolder.add(forceControls, 'RED-RED', -2, 2, 0.1).onChange(saveSettings);
@@ -242,13 +267,13 @@ forcesFolder.add(forceControls, 'GREEN-BLUE', -2, 2, 0.1).onChange(saveSettings)
 forcesFolder.add(forceControls, 'BLUE-RED', -2, 2, 0.1).onChange(saveSettings);
 forcesFolder.add(forceControls, 'BLUE-BLUE', -2, 2, 0.1).onChange(saveSettings);
 forcesFolder.add(forceControls, 'BLUE-GREEN', -2, 2, 0.1).onChange(saveSettings);
+forcesFolder.add({ randomize: randomizeForces }, 'randomize').name('Randomize (R)');
 forcesFolder.open();
 
 const soundFolder = gui.addFolder('Sound');
 soundFolder.add(forceControls, 'soundEnabled').onChange(saveSettings);
 soundFolder.add(forceControls, 'soundSpeedMax', 5, 500).onChange(saveSettings);
 soundFolder.add(forceControls, 'soundFrequency', 100, 10000).onChange(saveSettings);
-soundFolder.open();
 
 // Randomize particle forces using their min/max
 function randomizeForces() {
@@ -274,7 +299,6 @@ function reloadParticles() {
     location.reload();
 }
 
-gui.add({ randomize: randomizeForces }, 'randomize').name('Randomize (R)');
 gui.add({ reset: resetToDefaults }, 'reset').name('Reset to Defaults');
 
 gui.close();
@@ -457,36 +481,22 @@ ws.onclose = () => {
     console.log('WebSocket disconnected');
 };
 
-// Map keys 1-9 and 0 to GUI properties for temporary manipulation
-const keyToProperty = {
-    'Digit1': 'RED-RED',
-    'Digit2': 'RED-GREEN',
-    'Digit3': 'RED-BLUE',
-    'Digit4': 'GREEN-RED',
-    'Digit5': 'GREEN-GREEN',
-    'Digit6': 'GREEN-BLUE',
-    'Digit7': 'BLUE-RED',
-    'Digit8': 'BLUE-BLUE',
-    'Digit9': 'BLUE-GREEN',
-    'Digit0': 'gravity'
+// Map keys 1-9 and 0 to GUI properties with boosted values for temporary manipulation
+const keyBindings = {
+    'Digit1': { property: 'maxRadius', boosted: 2 },
+    'Digit2': { property: 'RED-GREEN', boosted: 200 },
+    'Digit3': { property: 'RED-BLUE', boosted: -10 },
+    'Digit4': { property: 'GREEN-RED', boosted: 20 },
+    'Digit5': { property: 'GREEN-GREEN', boosted: 6 },
+    'Digit6': { property: 'GREEN-BLUE', boosted: 20 },
+    'Digit7': { property: 'repulsionRange', boosted: 20 },
+    'Digit8': { property: 'BLUE-BLUE', boosted: 20 },
+    'Digit9': { property: 'BLUE-GREEN', boosted: 20 },
+    'Digit0': { property: 'gravity', boosted: 4000 }
 };
 
 // Store original values when keys are pressed
 const originalValues = {};
-
-// Boosted values when keys are held (set to max for forces, high for gravity)
-const boostedValues = {
-    'RED-RED': 20,
-    'RED-GREEN': 2,
-    'RED-BLUE': -10,
-    'GREEN-RED': 20,
-    'GREEN-GREEN': 6,
-    'GREEN-BLUE': 20,
-    'BLUE-RED': 20,
-    'BLUE-BLUE': 20,
-    'BLUE-GREEN': 20,
-    'gravity': 4000
-};
 
 // Handler for keydown logic
 function handleKeyDown(code) {
@@ -496,24 +506,23 @@ function handleKeyDown(code) {
     }
 
     // Handle number keys for GUI manipulation
-    const property = keyToProperty[code];
-    if (property && !originalValues.hasOwnProperty(code)) {
+    const binding = keyBindings[code];
+    if (binding && !originalValues.hasOwnProperty(code)) {
         // Store original value
-        originalValues[code] = forceControls[property];
+        originalValues[code] = forceControls[binding.property];
         // Set boosted value
-        forceControls[property] = boostedValues[property];
+        forceControls[binding.property] = binding.boosted;
         // Update GUI display
         gui.updateDisplay();
-        console.log(code);
     }
 }
 
 // Handler for keyup logic
 function handleKeyUp(code) {
     // Restore original value when key is released
-    const property = keyToProperty[code];
-    if (property && originalValues.hasOwnProperty(code)) {
-        forceControls[property] = originalValues[code];
+    const binding = keyBindings[code];
+    if (binding && originalValues.hasOwnProperty(code)) {
+        forceControls[binding.property] = originalValues[code];
         delete originalValues[code];
         // Update GUI display
         gui.updateDisplay();
@@ -721,7 +730,11 @@ function updatePhysicsGPU(deltaTime) {
     updateForceMatrix();
 
     positionVariable.material.uniforms['deltaTime'].value = deltaTime;
-    positionVariable.material.uniforms['maxRadius'].value = forceControls.maxRadius;
+
+    // Smoothly interpolate maxRadius toward target
+    const lerpSpeed = 3.0; // Adjust for faster/slower transitions
+    currentMaxRadius += (forceControls.maxRadius - currentMaxRadius) * Math.min(deltaTime * lerpSpeed, 1);
+    positionVariable.material.uniforms['maxRadius'].value = currentMaxRadius;
 
     // Compute on GPU
     gpuCompute.compute();
@@ -778,6 +791,16 @@ function updatePhysicsGPU(deltaTime) {
             otherPositions[bi] = p.position.x;
             otherPositions[bi + 1] = p.position.y;
             otherPositions[bi + 2] = p.position.z;
+
+            // Rotate hue for green particles based on speed
+            if (p.type === 1) { // GREEN
+                const speedNorm = Math.min(speed / 500, 1); // Normalize speed (0-1)
+                const hue = (0.33 + speedNorm * 0.67) % 1; // Green (0.33) to red (0) via yellow
+                const [r, g, b] = hslToRgb(hue, 0.7, 0.7);
+                otherColors[bi] = r;
+                otherColors[bi + 1] = g;
+                otherColors[bi + 2] = b;
+            }
         }
     }
 
@@ -835,6 +858,7 @@ function updatePhysicsGPU(deltaTime) {
 
     redGeometry.attributes.position.needsUpdate = true;
     otherGeometry.attributes.position.needsUpdate = true;
+    otherGeometry.attributes.color.needsUpdate = true;
 }
 
 let lastFrameTime = performance.now();

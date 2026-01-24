@@ -379,6 +379,40 @@ if (error !== null) {
 
 const keysPressed = { };
 
+// WebSocket connection to sync keystrokes across devices
+const ws = new WebSocket(`ws://${location.host}/keystroke-sync`);
+
+ws.onmessage = (e) => {
+    try {
+        const data = JSON.parse(e.data);
+        // Only process our keystroke messages, ignore Vite HMR and other messages
+        if (data.type === 'keydown') {
+            console.log('Received keydown:', data.code);
+            keysPressed[data.code] = true;
+            handleKeyDown(data.code);
+        } else if (data.type === 'keyup') {
+            console.log('Received keyup:', data.code);
+            keysPressed[data.code] = false;
+            handleKeyUp(data.code);
+        }
+        // Silently ignore other message types (like Vite HMR)
+    } catch (err) {
+        // Ignore parsing errors from non-JSON messages
+    }
+};
+
+ws.onopen = () => {
+    console.log('WebSocket connected');
+};
+
+ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+};
+
+ws.onclose = () => {
+    console.log('WebSocket disconnected');
+};
+
 // Map keys 1-9 and 0 to GUI properties for temporary manipulation
 const keyToProperty = {
     'Digit1': 'RED-RED',
@@ -410,37 +444,55 @@ const boostedValues = {
     'gravity': 4000
 };
 
-document.addEventListener('keydown', (event) => {
-    keysPressed[event.code] = true;
-
+// Handler for keydown logic
+function handleKeyDown(code) {
     // R key to randomize
-    if (event.code === 'KeyR') {
+    if (code === 'KeyR') {
         randomizeForces();
     }
 
     // Handle number keys for GUI manipulation
-    const property = keyToProperty[event.code];
-    if (property && !originalValues.hasOwnProperty(event.code)) {
+    const property = keyToProperty[code];
+    if (property && !originalValues.hasOwnProperty(code)) {
         // Store original value
-        originalValues[event.code] = forceControls[property];
+        originalValues[code] = forceControls[property];
         // Set boosted value
         forceControls[property] = boostedValues[property];
         // Update GUI display
         gui.updateDisplay();
-        console.log(event.code)
+        console.log(code);
+    }
+}
+
+// Handler for keyup logic
+function handleKeyUp(code) {
+    // Restore original value when key is released
+    const property = keyToProperty[code];
+    if (property && originalValues.hasOwnProperty(code)) {
+        forceControls[property] = originalValues[code];
+        delete originalValues[code];
+        // Update GUI display
+        gui.updateDisplay();
+    }
+}
+
+document.addEventListener('keydown', (event) => {
+    keysPressed[event.code] = true;
+    handleKeyDown(event.code);
+
+    // Send keystroke to other devices via WebSocket
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'keydown', code: event.code }));
     }
 });
 
 document.addEventListener('keyup', (event) => {
     keysPressed[event.code] = false;
+    handleKeyUp(event.code);
 
-    // Restore original value when key is released
-    const property = keyToProperty[event.code];
-    if (property && originalValues.hasOwnProperty(event.code)) {
-        forceControls[property] = originalValues[event.code];
-        delete originalValues[event.code];
-        // Update GUI display
-        gui.updateDisplay();
+    // Send keystroke to other devices via WebSocket
+    if (ws.readyState === WebSocket.OPEN) {
+       ws.send(JSON.stringify({ type: 'keyup', code: event.code }));
     }
 });
 

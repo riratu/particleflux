@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ambient Drone</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 100%);
+            font-family: monospace;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        #container {
+            text-align: center;
+            color: #fff;
+        }
+        button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            padding: 20px 40px;
+            font-size: 18px;
+            font-family: monospace;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.3s;
+            margin: 10px;
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        h1 {
+            font-size: 48px;
+            margin-bottom: 30px;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        }
+        #status {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        #controls {
+            margin-top: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .control {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .control label {
+            min-width: 120px;
+            text-align: right;
+            font-size: 14px;
+        }
+        .control input[type="range"] {
+            flex: 1;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+        }
+        .control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .control input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+        .control input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .control .value {
+            min-width: 60px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        #meter {
+            width: 60px;
+            height: 200px;
+            margin: 20px auto;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>Ambient Drone</h1>
+        <button id="startBtn">Start Drone</button>
+        <button id="stopBtn" disabled>Stop Drone</button>
+        <div id="status">Click start to begin</div>
+        <canvas id="meter" width="60" height="200"></canvas>
+        <div id="controls"></div>
+    </div>
+
+    <script type="module" src="drone.js"></script>
+</body>
+</html>

@@ -4,268 +4,329 @@ const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const status = document.getElementById('status');
 
-let synths = [];
-let group1 = [], group2 = [];
-let reverb, filters = [], lfos = [], compressor;
-let gain1, gain2;
+let reverb, reverbConv, reverbPreDelay, filters = [], lfos = [], compressor;
 let shimmerShift, shimmerGain;
+let crackleInterval, chordInterval;
 let automationInterval;
-let volumeAutomationInterval;
 let meter, meterCanvas, meterCtx;
 let meterAnimationId;
 
+const layers = {};
+
 // Control parameters
 const params = {
-    synth1Volume: -15,
-    synth2Volume: -15,
-    filterFreq: 800,
-    filterQ: 1,
-    reverbDecay: 30,
+    synth1Volume: -40,
+    synth2Volume: -40,
+    bassVolume: -15,
+    padVolume: -15,
+    airVolume: -15,
+    crackleVolume: -15,
+    reverbDecay: 80,
     reverbWet: 1,
-    lfo1Speed: 0.1,
-    lfo2Speed: 0.05,
     automate: false
 };
 
-function synth1(notes) {
-    const newSynths = notes.map((note, i) => {
-        // Randomly choose oscillator type for each synth
-        const types = ['sine', 'sawtooth', 'square'];
-        const randomType = types[Math.floor(Math.random() * types.length)];
+// Layer configurations
+const layerConfigs = {
+    synth1: {
+        oscType: 'sine', attack: 6, decay: 2, sustain: 0.8, release: 10,
+        volBase: -18, volStep: 2, detune: 8,
+    },
+    synth2: {
+        oscType: 'triangle', attack: 8, decay: 3, sustain: 0.7, release: 12,
+        volBase: -20, volStep: 2, detune: 12,
+    },
+    bass: {
+        oscType: 'sine', attack: 6, decay: 0, sustain: 1, release: 10,
+        volBase: -15, volStep: 0, detune: 0,
+    },
+    pad: {
+        oscType: 'triangle', attack: 6, decay: 2, sustain: 0.8, release: 10,
+        volBase: -20, volStep: 1.5, detune: 15,
+        volLfo: { speed: 0.03, speedRange: 0.05, min: -25, max: -15 },
+    },
+    air: {
+        oscType: 'sine', attack: 8, decay: 3, sustain: 0.6, release: 12,
+        volBase: -25, volStep: 2, detune: 20,
+        volLfo: { speed: 0.02, speedRange: 0.03, min: -35, max: -20 },
+    },
+};
 
+// Chord progression — per-layer voicings
+const progression = [
+    { // Cmaj9
+        bass: ['C2'],
+        synth1: ['C2', 'G2', 'C3', 'G3', 'C4'],
+        synth2: ['E3', 'B3', 'E4', 'B4'],
+        pad: ['C3', 'E3', 'G3', 'B3', 'D4'],
+        air: ['G5', 'B5', 'D6', 'E6', 'G6'],
+    },
+    { // Am7
+        bass: ['A1'],
+        synth1: ['A1', 'E2', 'A2', 'E3', 'A3'],
+        synth2: ['C3', 'G3', 'C4', 'G4'],
+        pad: ['A2', 'C3', 'E3', 'G3', 'B3'],
+        air: ['E5', 'G5', 'B5', 'C6', 'E6'],
+    },
+    { // Fmaj7(9)
+        bass: ['F1'],
+        synth1: ['F1', 'C2', 'F2', 'C3', 'F3'],
+        synth2: ['A3', 'E4', 'A4', 'C5'],
+        pad: ['F2', 'A2', 'C3', 'E3', 'G3'],
+        air: ['A5', 'C6', 'E6', 'G6'],
+    },
+    { // Dm9
+        bass: ['D2'],
+        synth1: ['D2', 'A2', 'D3', 'A3', 'D4'],
+        synth2: ['F3', 'C4', 'F4', 'A4'],
+        pad: ['D3', 'F3', 'A3', 'C4', 'E4'],
+        air: ['F5', 'A5', 'C6', 'E6'],
+    },
+    { // Em7
+        bass: ['E2'],
+        synth1: ['E2', 'B2', 'E3', 'B3', 'E4'],
+        synth2: ['G3', 'D4', 'G4', 'B4'],
+        pad: ['E3', 'G3', 'B3', 'D4', 'G4'],
+        air: ['B5', 'D6', 'G5', 'B5'],
+    },
+    { // Gsus2
+        bass: ['G1'],
+        synth1: ['G1', 'D2', 'G2', 'D3', 'G3'],
+        synth2: ['A3', 'D4', 'G4', 'A4'],
+        pad: ['G2', 'B2', 'D3', 'G3', 'A3'],
+        air: ['D5', 'G5', 'A5', 'D6'],
+    },
+];
+
+let chordIndex = 0;
+
+function setupLayer(name, gainParam, filterOpts, filterLfoOpts) {
+    const gain = new Tone.Gain(Tone.dbToGain(params[gainParam])).connect(reverb);
+    const filt = new Tone.Filter(filterOpts).connect(gain);
+    filters.push(filt);
+
+    if (filterLfoOpts) {
+        const lfo = new Tone.LFO(filterLfoOpts.speed, filterLfoOpts.min, filterLfoOpts.max).start();
+        if (filterLfoOpts.phase) lfo.phase = filterLfoOpts.phase;
+        lfo.connect(filt.frequency);
+        lfos.push(lfo);
+    }
+
+    layers[name] = { gain, filt, synths: [] };
+}
+
+function triggerLayer(name, notes) {
+    const layer = layers[name];
+    const config = layerConfigs[name];
+
+    // Release old synths — they fade out over release time
+    const old = layer.synths;
+    old.forEach(s => s.triggerRelease());
+    setTimeout(() => old.forEach(s => {
+        if (s.lfo) s.lfo.dispose();
+        s.dispose();
+    }), (config.release + 2) * 1000);
+
+    // Create new synths for this chord
+    layer.synths = notes.map((note, i) => {
         const synth = new Tone.Synth({
-            oscillator: {
-                type: randomType,
-            },
+            oscillator: { type: config.oscType },
             envelope: {
-                attack: 4,
-                decay: 0,
-                sustain: 1,
-                release: 8
+                attack: config.attack,
+                decay: config.decay,
+                sustain: config.sustain,
+                release: config.release
+            },
+            detune: (Math.random() - 0.5) * config.detune
+        });
+        synth.volume.value = config.volBase - (i * config.volStep);
+        synth.connect(layer.filt);
+
+        if (config.volLfo) {
+            const volLfo = new Tone.LFO(
+                config.volLfo.speed + Math.random() * config.volLfo.speedRange,
+                config.volLfo.min, config.volLfo.max
+            ).start();
+            volLfo.phase = Math.random() * 360;
+            volLfo.connect(synth.volume);
+            synth.lfo = volLfo;
+        }
+
+        synth.triggerAttack(note);
+        return synth;
+    });
+}
+
+function changeChord() {
+    const chord = progression[chordIndex];
+    for (const name of Object.keys(layers)) {
+        if (chord[name]) {
+            triggerLayer(name, chord[name]);
+        }
+    }
+    chordIndex = (chordIndex + 1) % progression.length;
+    chordInterval = setTimeout(changeChord, 25000);
+}
+
+function crackle() {
+    const gainCrackle = new Tone.Gain(Tone.dbToGain(params.crackleVolume)).connect(reverb);
+    layers.crackle = { gain: gainCrackle, synths: [] };
+
+    const popSynth = new Tone.NoiseSynth({
+        noise: { type: 'pink' },
+        envelope: { attack: 0.002, decay: 0.06, sustain: 0, release: 0.04 }
+    });
+
+    const popFilter = new Tone.Filter({ type: 'lowpass', frequency: 2500, Q: 0.5 }).connect(gainCrackle);
+    filters.push(popFilter);
+    popSynth.connect(popFilter);
+
+    const hiss = new Tone.Noise('brown').start();
+    hiss.volume.value = -30;
+    const hissFilter = new Tone.Filter({ type: 'bandpass', frequency: 1500, Q: 0.3 }).connect(gainCrackle);
+    filters.push(hissFilter);
+    hiss.connect(hissFilter);
+
+    function scheduleBurst() {
+        if (!crackleInterval) return;
+        popSynth.volume.value = -30 + Math.random() * 15;
+        popSynth.triggerAttackRelease(0.01 + Math.random() * 0.05);
+        crackleInterval = setTimeout(scheduleBurst, 200 + Math.random() * 2000);
+    }
+
+    crackleInterval = setTimeout(scheduleBurst, 1000);
+    layers.crackle.synths = [popSynth, hiss];
+}
+
+function createAmbientIR(rawContext, duration) {
+    const sr = rawContext.sampleRate;
+    const len = Math.floor(sr * duration);
+    const buffer = rawContext.createBuffer(2, len, sr);
+
+    for (let ch = 0; ch < 2; ch++) {
+        const data = buffer.getChannelData(ch);
+        let lpState = 0;
+
+        for (let i = 0; i < len; i++) {
+            const t = i / sr;
+            const progress = t / duration;
+            const decay = Math.exp(-5 * t / duration);
+            const lpCoeff = 0.05 + progress * 0.9;
+            const noise = Math.random() * 2 - 1;
+            lpState = lpState + (noise - lpState) * (1 - lpCoeff);
+            const mod = 1 + 0.12 * Math.sin(t * 0.7 + ch * 1.5) * Math.sin(t * 1.3);
+            data[i] = lpState * decay * mod;
+        }
+
+        const erTimes = ch === 0
+            ? [0.005, 0.012, 0.019, 0.028, 0.039, 0.052, 0.067, 0.085, 0.11, 0.14]
+            : [0.007, 0.015, 0.023, 0.033, 0.044, 0.058, 0.075, 0.095, 0.12, 0.16];
+
+        erTimes.forEach((time) => {
+            const idx = Math.floor(time * sr);
+            if (idx < len) {
+                const amp = 0.5 * Math.exp(-4 * time);
+                for (let j = 0; j < 4; j++) {
+                    if (idx + j < len) {
+                        data[idx + j] += (Math.random() * 2 - 1) * amp * (1 - j * 0.25);
+                    }
+                }
             }
-        }).toDestination();
+        });
 
-        synth.volume.value = -15 - (i * 2); // Quieter for upper harmonics
-        return {synth, note};
-    });
+        let max = 0;
+        for (let i = 0; i < len; i++) max = Math.max(max, Math.abs(data[i]));
+        if (max > 0) {
+            const scale = 0.7 / max;
+            for (let i = 0; i < len; i++) data[i] *= scale;
+        }
+    }
 
-    gain1 = new Tone.Gain(Tone.dbToGain(params.synth1Volume)).connect(reverb);
-
-    // Add filter for movement
-    const filt = new Tone.Filter({
-        type: 'lowpass',
-        frequency: params.filterFreq,
-        Q: params.filterQ
-    }).connect(gain1);
-    filters.push(filt);
-
-    // Reconnect synths through effects chain
-    newSynths.forEach(({synth}) => {
-        synth.disconnect();
-        synth.connect(filt);
-    });
-
-    // LFO for subtle modulation
-    const lfo = new Tone.LFO(params.lfo1Speed, 400, 5200).start();
-    lfo.connect(filt.frequency);
-    lfos.push(lfo);
-
-    // Create individual LFOs for each synth with random speeds
-    newSynths.forEach(({synth}) => {
-        const randomSpeed = 0.1 + Math.random() * 0.15;
-        const volLfo = new Tone.LFO(randomSpeed, -20, -10).start();
-        volLfo.connect(synth.volume);
-        synth.lfo = volLfo; // Store LFO reference on synth for cleanup
-    });
-
-    // Start all notes
-    newSynths.forEach(({ synth, note }) => {
-        synth.triggerAttack(note);
-    });
-
-    group1 = newSynths;
-    synths.push(...newSynths);
-}
-
-function synth2(notes) {
-    const newSynths = notes.map((note, i) => {
-        // Randomly choose oscillator type for each synth
-        const types = ['sine', 'sawtooth', 'square'];
-        const randomType = types[Math.floor(Math.random() * types.length)];
-
-        const synth = new Tone.Synth({
-            oscillator: {
-                type: randomType,
-            },
-            envelope: {
-                attack: 4,
-                decay: 0,
-                sustain: 1,
-                release: 8
-            },
-            detune: (Math.random() - 0.5) * 200
-        }).toDestination();
-
-        synth.volume.value = -15 - (i * 2); // Quieter for upper harmonics
-        return {synth, note};
-    });
-
-    gain2 = new Tone.Gain(Tone.dbToGain(params.synth2Volume)).connect(reverb);
-
-    // Add filter for movement
-    const filt = new Tone.Filter({
-        type: 'lowpass',
-        frequency: params.filterFreq,
-        Q: params.filterQ
-    }).connect(gain2);
-    filters.push(filt);
-
-    // Reconnect synths through effects chain
-    newSynths.forEach(({synth}) => {
-        synth.disconnect();
-        synth.connect(filt);
-    });
-
-    // LFO for subtle modulation
-    const lfo = new Tone.LFO(params.lfo1Speed, 400, 5200).start();
-    lfo.connect(filt.frequency);
-    lfos.push(lfo);
-
-    // Create individual LFOs for each synth with random speeds
-    newSynths.forEach(({synth}) => {
-        const randomSpeed = 0.1 + Math.random() * 0.15;
-        const volLfo = new Tone.LFO(randomSpeed, -20, -10).start();
-        volLfo.connect(synth.volume);
-        synth.lfo = volLfo; // Store LFO reference on synth for cleanup
-    });
-
-    // Start all notes
-    newSynths.forEach(({ synth, note }) => {
-        synth.triggerAttack(note);
-    });
-
-    group2 = newSynths;
-    synths.push(...newSynths);
-}
-
-function bass(notes) {
-    const newSynths = notes.map((note, i) => {
-        const synth = new Tone.Synth({
-            oscillator: {
-                type: "square",
-            },
-            envelope: {
-                attack: 4,
-                decay: 0,
-                sustain: 1,
-                release: 8
-            },
-            detune: (Math.random() - 0.5) * 5
-        }).toDestination();
-
-        synth.volume.value = -15 - (i * 2); // Quieter for upper harmonics
-        return {synth, note};
-    });
-
-    gain2 = new Tone.Gain(Tone.dbToGain(params.synth2Volume)).connect(reverb);
-
-    // Add filter for movement
-    const filt = new Tone.Filter({
-        type: 'lowpass',
-        frequency: "300",
-        Q: params.filterQ
-    }).connect(gain2);
-    filters.push(filt);
-
-    // Reconnect synths through effects chain
-    newSynths.forEach(({synth}) => {
-        synth.disconnect();
-        synth.connect(filt);
-    });
-
-    // LFO for subtle modulation
-    const lfo = new Tone.LFO(params.lfo1Speed, 400, 5200).start();
-    lfo.connect(filt.frequency);
-    lfos.push(lfo);
-
-    // Create individual LFOs for each synth with random speeds
-    newSynths.forEach(({synth}) => {
-        const randomSpeed = 0.1 + Math.random() * 0.15;
-        const volLfo = new Tone.LFO(randomSpeed, -20, -10).start();
-        volLfo.connect(synth.volume);
-        synth.lfo = volLfo; // Store LFO reference on synth for cleanup
-    });
-
-    // Start all notes
-    newSynths.forEach(({ synth, note }) => {
-        synth.triggerAttack(notes[0]);
-    });
+    return buffer;
 }
 
 async function startDrone() {
     await Tone.start();
 
-    // Create compressor for output
     compressor = new Tone.Compressor({
-        threshold: -24,
-        ratio: 4,
-        attack: 0.003,
-        release: 0.25
+        threshold: -18, ratio: 2.5, attack: 0.05, release: 0.5
     }).toDestination();
 
-    // Create meter
     meter = new Tone.Meter();
     compressor.connect(meter);
 
-    // Shared reverb
-    reverb = new Tone.Reverb({
-        decay: params.reverbDecay,
-        wet: params.reverbWet
-    }).connect(compressor);
+    // Custom convolution reverb
+    reverb = new Tone.Gain(1);
+    const ir = createAmbientIR(Tone.getContext().rawContext, 15);
+    reverbConv = new Tone.Convolver();
+    reverbConv._convolver.buffer = ir;
+    reverbPreDelay = new Tone.Delay(0.4);
+    reverb.chain(reverbPreDelay, reverbConv, compressor);
 
-    // Shimmer: pitch shift reverb tail up an octave and feed back
-    shimmerShift = new Tone.PitchShift({ pitch: 12, wet: 1 });
-    shimmerGain = new Tone.Gain(0.3); // feedback amount
-    reverb.connect(shimmerShift);
+    // Shimmer
+    shimmerGain = new Tone.Gain(0.25);
+    shimmerShift = new Tone.FeedbackDelay({ delayTime: 0.4, feedback: 0.6, wet: 1 });
+    const shimmerFilter = new Tone.Filter({ type: 'highpass', frequency: 800 });
+    reverbConv.connect(shimmerFilter);
+    shimmerFilter.connect(shimmerShift);
     shimmerShift.connect(shimmerGain);
-    shimmerGain.connect(reverb);
+    shimmerGain.connect(compressor);
 
-    // Create multiple synth layers for richness
-    const notes = ['C2', 'G2', 'C3', 'E3', 'G3', 'C4', 'G4', 'C5', 'E5', 'G5'];
+    // Setup layer chains (gain → filter → reverb, with optional filter LFOs)
+    setupLayer('synth1', 'synth1Volume',
+        { type: 'lowpass', frequency: 1500, Q: 0.5 },
+        { speed: 0.03, min: 600, max: 1500 });
 
-    synth1(notes);
-    synth2(notes);
-    bass(notes);
+    setupLayer('synth2', 'synth2Volume',
+        { type: 'lowpass', frequency: 2000, Q: 0.5 },
+        { speed: 0.02, min: 800, max: 2000, phase: 180 });
+
+    setupLayer('bass', 'bassVolume',
+        { type: 'lowpass', frequency: 120, Q: 0.3 },
+        null);
+
+    setupLayer('pad', 'padVolume',
+        { type: 'lowpass', frequency: 2000, Q: 0.5 },
+        null);
+
+    setupLayer('air', 'airVolume',
+        { type: 'highpass', frequency: 2000, Q: 0.3 },
+        null);
+
+    crackle();
+
+    // Trigger first chord and start progression
+    chordIndex = 0;
+    changeChord();
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
     status.textContent = 'Drone active...';
 
-    // Start automation if enabled
-    if (params.automate) {
-        automationInterval = setInterval(automateParameters, 3000);
-    }
-
-    // Start individual volume automation
-    startVolumeAutomation();
-
-    // Start meter visualization
     drawMeter();
 }
 
 function stopDrone() {
-    synths.forEach(({ synth }) => {
-        synth.triggerRelease();
-    });
+    if (chordInterval) {
+        clearTimeout(chordInterval);
+        chordInterval = null;
+    }
+
+    if (crackleInterval) {
+        clearTimeout(crackleInterval);
+        crackleInterval = null;
+    }
 
     if (automationInterval) {
         clearInterval(automationInterval);
         automationInterval = null;
     }
 
-    if (volumeAutomationInterval) {
-        clearInterval(volumeAutomationInterval);
-        volumeAutomationInterval = null;
+    // Release all layer synths
+    for (const layer of Object.values(layers)) {
+        layer.synths.forEach(s => {
+            if (s.triggerRelease) s.triggerRelease();
+        });
     }
 
     if (meterAnimationId) {
@@ -274,22 +335,24 @@ function stopDrone() {
     }
 
     setTimeout(() => {
-        synths.forEach(({ synth }) => {
-            if (synth.lfo) synth.lfo.dispose();
-            synth.dispose();
-        });
-        synths = [];
-        group1 = [];
-        group2 = [];
+        for (const layer of Object.values(layers)) {
+            layer.synths.forEach(s => {
+                if (s.lfo) s.lfo.dispose();
+                s.dispose();
+            });
+            layer.synths = [];
+            if (layer.gain) layer.gain.dispose();
+            if (layer.filt) layer.filt.dispose();
+        }
         lfos.forEach(l => l.dispose());
         lfos = [];
         if (shimmerGain) shimmerGain.dispose();
         if (shimmerShift) shimmerShift.dispose();
+        if (reverbConv) reverbConv.dispose();
+        if (reverbPreDelay) reverbPreDelay.dispose();
         if (reverb) reverb.dispose();
         filters.forEach(f => f.dispose());
         filters = [];
-        if (gain1) gain1.dispose();
-        if (gain2) gain2.dispose();
         if (compressor) compressor.dispose();
         if (meter) meter.dispose();
 
@@ -299,28 +362,12 @@ function stopDrone() {
     }, 8000);
 }
 
-
-// Individual synth volume automation
-function startVolumeAutomation() {
-    volumeAutomationInterval = setInterval(() => {
-        const applyToGroup = (group, baseVolume) => {
-            group.forEach(({ synth }, i) => {
-                const offset = (Math.random() - 0.5) * 6; // +/- 3 dB variation
-                const rampTime = 2 + Math.random() * 2;
-                synth.volume.rampTo(baseVolume - (i * 2) + offset, rampTime);
-            });
-        };
-        applyToGroup(group1, params.synth1Volume);
-        applyToGroup(group2, params.synth2Volume);
-    }, 2500);
-}
-
 // Draw meter visualization
 function drawMeter() {
     if (!meter || !meterCanvas) return;
 
-    const level = meter.getValue(); // Returns dB value
-    const normalizedLevel = Math.max(0, Math.min(1, (level + 60) / 60)); // Normalize -60dB to 0dB -> 0 to 1
+    const level = meter.getValue();
+    const normalizedLevel = Math.max(0, Math.min(1, (level + 60) / 60));
 
     const width = meterCanvas.width;
     const height = meterCanvas.height;
@@ -328,31 +375,21 @@ function drawMeter() {
     meterCtx.fillStyle = '#0a0a1a';
     meterCtx.fillRect(0, 0, width, height);
 
-    // Draw meter bar
     const barHeight = normalizedLevel * height;
-
-    // Color based on level (green -> yellow -> red)
     let color;
-    if (normalizedLevel < 0.7) {
-        color = '#00ff00'; // Green
-    } else if (normalizedLevel < 0.9) {
-        color = '#ffff00'; // Yellow
-    } else {
-        color = '#ff0000'; // Red (overdriven)
-    }
+    if (normalizedLevel < 0.7) color = '#00ff00';
+    else if (normalizedLevel < 0.9) color = '#ffff00';
+    else color = '#ff0000';
 
     meterCtx.fillStyle = color;
     meterCtx.fillRect(0, height - barHeight, width, barHeight);
 
-    // Draw dB markings
     meterCtx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    const dbMarks = [0, -6, -12, -18, -24, -30];
-    dbMarks.forEach(db => {
+    [0, -6, -12, -18, -24, -30].forEach(db => {
         const y = height * (1 - (db + 60) / 60);
         meterCtx.fillRect(0, y, width, 1);
     });
 
-    // Draw current dB value
     meterCtx.fillStyle = '#fff';
     meterCtx.font = '12px monospace';
     meterCtx.fillText(level.toFixed(1) + ' dB', 5, 15);
@@ -365,11 +402,22 @@ function setupControls() {
     const controls = document.getElementById('controls');
 
     const controlDefs = [
-        { id: 'synth1Volume', label: 'Synth 1 Vol', min: -40, max: 0, step: 1, gain: () => gain1 },
-        { id: 'synth2Volume', label: 'Synth 2 Vol', min: -40, max: 0, step: 1, gain: () => gain2 },
+        { id: 'synth1Volume', label: 'Synth 1 Vol', min: -40, max: -10, step: 1 },
+        { id: 'synth2Volume', label: 'Synth 2 Vol', min: -40, max: -10, step: 1 },
+        { id: 'bassVolume', label: 'Bass Vol', min: -40, max: -10, step: 1 },
+        { id: 'padVolume', label: 'Pad Vol', min: -40, max: -10, step: 1 },
+        { id: 'airVolume', label: 'Air Vol', min: -40, max: -10, step: 1 },
+        { id: 'crackleVolume', label: 'Crackle Vol', min: -40, max: 5, step: 1 },
     ];
 
-    controlDefs.forEach(({ id, label, min, max, step, gain }) => {
+    // Map param IDs to layer names
+    const paramToLayer = {
+        synth1Volume: 'synth1', synth2Volume: 'synth2',
+        bassVolume: 'bass', padVolume: 'pad',
+        airVolume: 'air', crackleVolume: 'crackle',
+    };
+
+    controlDefs.forEach(({ id, label, min, max, step }) => {
         const wrapper = document.createElement('div');
         wrapper.className = 'control';
 
@@ -393,8 +441,8 @@ function setupControls() {
             params[id] = value;
             valueDisplay.textContent = value.toFixed(0) + ' dB';
 
-            const g = gain();
-            if (g) g.gain.rampTo(Tone.dbToGain(value), 0.1);
+            const layer = layers[paramToLayer[id]];
+            if (layer?.gain) layer.gain.gain.rampTo(Tone.dbToGain(value), 0.1);
         });
 
         wrapper.appendChild(labelEl);
@@ -407,7 +455,6 @@ function setupControls() {
 startBtn.addEventListener('click', startDrone);
 stopBtn.addEventListener('click', stopDrone);
 
-// Initialize meter canvas
 function initMeter() {
     meterCanvas = document.getElementById('meter');
     if (meterCanvas) {
@@ -415,6 +462,5 @@ function initMeter() {
     }
 }
 
-// Initialize controls on load
 setupControls();
 initMeter();

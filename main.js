@@ -9,7 +9,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
-import * as Tone from 'tone';
+import { startAudioContext, isAudioStarted, initAudio, updateAudio } from './audio.js';
 import velocityShader from './shaders/velocity.glsl?raw';
 import positionShader from './shaders/position.glsl?raw';
 
@@ -73,12 +73,9 @@ window.oncontextmenu = function () {
 
 // Start audio context on user interaction
 document.addEventListener('click', async () => {
-    if (!audioContextStarted) {
-        console.log('Starting Tone.js...');
-        await Tone.start();
-        console.log('Tone.js started, context state:', Tone.context.state);
-        audioContextStarted = true;
-        initAudio();
+    if (!isAudioStarted()) {
+        await startAudioContext();
+        initAudio(redCount);
         console.log('Audio started');
     }
 }, { once: true });
@@ -125,79 +122,6 @@ function hslToRgb(h, s, l) {
 // Cache type names array to avoid repeated allocation
 const typeNames = Object.keys(particleTypes);
 
-// Audio setup
-let audioInitialized = false;
-let audioContextStarted = false;
-let redNoises = []; // Array of sound sources for each red particle
-let reverb = null; // Shared reverb effect
-
-function initAudio() {
-    if (!audioInitialized && audioContextStarted) {
-        console.log('Initializing audio...');
-        console.log('Tone context state:', Tone.context.state);
-        console.log('Tone context destination:', Tone.Destination);
-
-        // Create a shared reverb effect
-        reverb = new Tone.Reverb({
-            decay: 20.5,
-            wet: 0.9,
-            preDelay: 0.01
-        });
-        reverb.toDestination();
-
-        // Sound files for each red particle
-        const soundFiles = [
-            'sounds/7 Drone - Gittiliveset.wav',
-            'sounds/atmos verb 120bpm 32t fm11.wav',
-            'sounds/Gittipad.wav'
-        ];
-
-        // Create audio players for each red particle
-        for (let i = 0; i < redCount; i++) {
-            // Create a looping player for the sound file
-            const player = new Tone.Player({
-                url: soundFiles[i % soundFiles.length],
-                loop: true,
-                autostart: true
-            });
-
-            const filter = new Tone.Filter({
-                type: "lowpass",
-                frequency: 100,
-                Q: 3,
-                rolloff: -48
-            });
-
-            const volume = new Tone.Volume(-60); // Start very quiet
-
-            const panner = new Tone.Panner3D({
-                panningModel: 'HRTF',
-                positionX: 0,
-                positionY: 0,
-                positionZ: 0
-            });
-
-            // Connect: player -> filter -> volume -> panner -> reverb -> output
-            player.connect(filter);
-            filter.connect(volume);
-            volume.connect(reverb);
-            //panner.connect(reverb);
-
-            redNoises.push({
-                source: player,
-                filter,
-                volume,
-                panner,
-                isOscillator: false
-            });
-        }
-
-        console.log(`Created ${redCount} audio players for red particles`);
-        audioInitialized = true;
-        console.log('Audio initialized - sounds started');
-    }
-}
-
 // Default values for forces
 const defaultForceControls = {
     repulsionRange: 150,
@@ -209,6 +133,8 @@ const defaultForceControls = {
     soundFrequency: 440,
     soundEnabled: true,
     maxRadius: 200.0,
+    speedMultiplier: 1.0,
+    websocketEnabled: false,
     'RED-RED': 2,
     'RED-GREEN': -0.7,
     'RED-BLUE': 0.5,
@@ -248,7 +174,8 @@ let forceControls = loadSettings();
 // Update GUI
 const gui = new GUI();
 const generalFolder = gui.addFolder('General');
-generalFolder.add(forceControls, 'repulsionStrength', 0.1, 1000).onChange(saveSettings);
+generalFolder.add(forceControls, 'speedMultiplier', 0.01, 2.0).onChange(saveSettings).name('Speed Multiplier');
+generalFolder.add(forceControls, 'repulsionStrength', 0.1, 10).onChange(saveSettings);
 generalFolder.add(forceControls, 'repulsionRange', 1, 500).onChange(saveSettings);
 generalFolder.add(forceControls, 'gravity', 0.01, 2000).onChange(saveSettings);
 generalFolder.add(forceControls, 'particleSize', 0.1, 3).onChange(() => { updateParticleSize(); saveSettings(); });
@@ -274,6 +201,16 @@ const soundFolder = gui.addFolder('Sound');
 soundFolder.add(forceControls, 'soundEnabled').onChange(saveSettings);
 soundFolder.add(forceControls, 'soundSpeedMax', 5, 500).onChange(saveSettings);
 soundFolder.add(forceControls, 'soundFrequency', 100, 10000).onChange(saveSettings);
+
+const networkFolder = gui.addFolder('Network');
+networkFolder.add(forceControls, 'websocketEnabled').onChange((enabled) => {
+    saveSettings();
+    if (enabled) {
+        connectWebSocket();
+    } else {
+        disconnectWebSocket();
+    }
+}).name('WebSocket Sync');
 
 // Randomize particle forces using their min/max
 function randomizeForces() {
@@ -436,6 +373,7 @@ velocityVariable.material.uniforms['mouse'] = { value: new THREE.Vector2() };
 velocityVariable.material.uniforms['spaceAttraction'] = { value: 0.0 };
 velocityVariable.material.uniforms['maxForce'] = { value: 300.0 };
 velocityVariable.material.uniforms['forceMatrix'] = { value: new THREE.Matrix3() };
+velocityVariable.material.uniforms['speedMultiplier'] = { value: forceControls.speedMultiplier };
 
 positionVariable.material.uniforms['deltaTime'] = { value: 0.0 };
 positionVariable.material.uniforms['maxRadius'] = { value: forceControls.maxRadius };
@@ -448,43 +386,64 @@ if (error !== null) {
 const keysPressed = { };
 
 // WebSocket connection to sync keystrokes across devices
-const ws = new WebSocket(`ws://${location.host}/keystroke-sync`);
+let ws = null;
 
-ws.onmessage = (e) => {
-    try {
-        const data = JSON.parse(e.data);
-        // Only process our keystroke messages, ignore Vite HMR and other messages
-        if (data.type === 'keydown') {
-            console.log('Received keydown:', data.code);
-            keysPressed[data.code] = true;
-            handleKeyDown(data.code);
-        } else if (data.type === 'keyup') {
-            console.log('Received keyup:', data.code);
-            keysPressed[data.code] = false;
-            handleKeyUp(data.code);
-        }
-        // Silently ignore other message types (like Vite HMR)
-    } catch (err) {
-        // Ignore parsing errors from non-JSON messages
+function connectWebSocket() {
+    if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+        return; // Already connected or connecting
     }
-};
 
-ws.onopen = () => {
-    console.log('WebSocket connected');
-};
+    ws = new WebSocket(`ws://${location.host}/keystroke-sync`);
 
-ws.onerror = (error) => {
-    console.error('WebSocket error:', error);
-};
+    ws.onmessage = (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            // Only process our keystroke messages, ignore Vite HMR and other messages
+            if (data.type === 'keydown') {
+                console.log('Received keydown:', data.code);
+                keysPressed[data.code] = true;
+                handleKeyDown(data.code);
+            } else if (data.type === 'keyup') {
+                console.log('Received keyup:', data.code);
+                keysPressed[data.code] = false;
+                handleKeyUp(data.code);
+            }
+            // Silently ignore other message types (like Vite HMR)
+        } catch (err) {
+            // Ignore parsing errors from non-JSON messages
+        }
+    };
 
-ws.onclose = () => {
-    console.log('WebSocket disconnected');
-};
+    ws.onopen = () => {
+        console.log('WebSocket connected');
+    };
+
+    ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    };
+
+    ws.onclose = () => {
+        console.log('WebSocket disconnected');
+    };
+}
+
+function disconnectWebSocket() {
+    if (ws) {
+        ws.close();
+        ws = null;
+        console.log('WebSocket disconnected by user');
+    }
+}
+
+// Connect WebSocket if enabled in settings
+if (forceControls.websocketEnabled) {
+    connectWebSocket();
+}
 
 // Map keys 1-9 and 0 to GUI properties with boosted values for temporary manipulation
 const keyBindings = {
-    'Digit1': { property: 'maxRadius', boosted: 2 },
-    'Digit2': { property: 'RED-GREEN', boosted: 200 },
+    'Digit1': { property: 'maxRadius', boosted: 2000 },
+    'Digit2': { property: 'gravity', boosted: 0 },
     'Digit3': { property: 'RED-BLUE', boosted: -10 },
     'Digit4': { property: 'GREEN-RED', boosted: 20 },
     'Digit5': { property: 'GREEN-GREEN', boosted: 6 },
@@ -533,8 +492,8 @@ document.addEventListener('keydown', (event) => {
     keysPressed[event.code] = true;
     handleKeyDown(event.code);
 
-    // Send keystroke to other devices via WebSocket
-    if (ws.readyState === WebSocket.OPEN) {
+    // Send keystroke to other devices via WebSocket if enabled
+    if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'keydown', code: event.code }));
     }
 });
@@ -543,8 +502,8 @@ document.addEventListener('keyup', (event) => {
     keysPressed[event.code] = false;
     handleKeyUp(event.code);
 
-    // Send keystroke to other devices via WebSocket
-    if (ws.readyState === WebSocket.OPEN) {
+    // Send keystroke to other devices via WebSocket if enabled
+    if (ws && ws.readyState === WebSocket.OPEN) {
        ws.send(JSON.stringify({ type: 'keyup', code: event.code }));
     }
 });
@@ -689,6 +648,7 @@ function updatePhysicsGPU(deltaTime) {
     velocityVariable.material.uniforms['gravity'].value = forceControls.gravity;
     velocityVariable.material.uniforms['mouse'].value.set(mouseX, mouseY);
     velocityVariable.material.uniforms['spaceAttraction'].value = keysPressed['Space'] ? 50 : 0;
+    velocityVariable.material.uniforms['speedMultiplier'].value = forceControls.speedMultiplier;
 
     updateForceMatrix();
 
@@ -768,56 +728,7 @@ function updatePhysicsGPU(deltaTime) {
     }
 
     // Control audio for every red particle
-    if (forceControls.soundEnabled && redSpeeds.length > 0 && audioContextStarted) {
-        // Initialize audio on first use
-        if (!audioInitialized) {
-            initAudio();
-        }
-
-        const now = Tone.now();
-        const minFreq = 100;
-        const maxFreq = forceControls.soundFrequency * 2;
-        const minVol = -15;
-        const maxVol = -10;
-
-        // Update each red particle's audio
-        for (let i = 0; i < redSpeeds.length; i++) {
-            const { speed, bufferIndex } = redSpeeds[i];
-
-            // Get the particle to calculate distance
-            const particle = particles.find(p => p.bufferKind === 'RED' && p.bufferIndex === bufferIndex);
-            if (!particle) continue;
-
-            const audioChannel = redNoises[bufferIndex];
-
-            if (audioChannel) {
-                // Update 3D panner position (scale down for reasonable audio space)
-                const scale = 0.01;
-                audioChannel.panner.positionX.linearRampToValueAtTime(particle.position.x * scale, now + 0.05);
-                audioChannel.panner.positionY.linearRampToValueAtTime(particle.position.y * scale, now + 0.05);
-                audioChannel.panner.positionZ.linearRampToValueAtTime(particle.position.z * scale, now + 0.05);
-
-                // Map speed to filter frequency and source frequency (for oscillators)
-                const speedNormalized = Math.min(speed / forceControls.soundSpeedMax, 2);
-                let targetFreq = minFreq + (maxFreq - minFreq) * speedNormalized;
-
-                // Update filter frequency
-                audioChannel.filter.frequency.linearRampToValueAtTime(targetFreq, now + 0.05);
-
-                // If it's an oscillator, also update its base frequency
-                // if (audioChannel.isOscillator) {
-                //     audioChannel.source.frequency.linearRampToValueAtTime(targetFreq * 0.5, now + 0.05);
-                // }
-                //
-                // Map speed to volume (louder when faster)
-                let targetVol = minVol + (maxVol - minVol) * speedNormalized;
-                //let targetVol = maxVol
-
-                // Smooth volume changes
-                audioChannel.volume.volume.linearRampToValueAtTime(targetVol, now + 0.05);
-            }
-        }
-    }
+    updateAudio(redSpeeds, particles, forceControls);
 
     redGeometry.attributes.position.needsUpdate = true;
     otherGeometry.attributes.position.needsUpdate = true;

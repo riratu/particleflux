@@ -8,6 +8,7 @@ uniform float maxSpeed;
 uniform vec2 mouse;
 uniform float spaceAttraction;
 uniform float maxForce;
+uniform float speedMultiplier;
 
 // Force matrix: forces[from][to]
 uniform mat3 forceMatrix; // 3x3 for RED, GREEN, BLUE interactions
@@ -97,6 +98,9 @@ void main() {
     // Update velocity
     velocity += force;
     velocity *= damping;
+
+    // Apply speed multiplier for calmer movement
+    velocity *= speedMultiplier;
 
     // Clamp speed
     float speed = length(velocity);

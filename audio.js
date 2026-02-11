@@ -1,0 +1,132 @@
+import * as Tone from 'tone';
+
+let audioInitialized = false;
+let audioContextStarted = false;
+let redNoises = [];
+let reverb = null;
+
+export async function startAudioContext() {
+    if (!audioContextStarted) {
+        console.log('Starting Tone.js...');
+        await Tone.start();
+        console.log('Tone.js started, context state:', Tone.context.state);
+        audioContextStarted = true;
+    }
+}
+
+export function isAudioStarted() {
+    return audioContextStarted;
+}
+
+export function initAudio(redCount) {
+    if (!audioInitialized && audioContextStarted) {
+        console.log('Initializing audio...');
+        console.log('Tone context state:', Tone.context.state);
+        console.log('Tone context destination:', Tone.Destination);
+
+        // Create a shared reverb effect
+        reverb = new Tone.Reverb({
+            decay: 20.5,
+            wet: 0.9,
+            preDelay: 0.01
+        });
+        reverb.toDestination();
+
+        // Sound files for each red particle
+        const soundFiles = [
+            'sounds/neu/giti_drone.mp3',
+            'sounds/neu/Gittipad.wav',
+            'sounds/neu/sphere.mp3'
+        ];
+
+        // Create audio players for each red particle
+        for (let i = 0; i < redCount; i++) {
+            // Create a looping player for the sound file
+            const player = new Tone.Player({
+                url: soundFiles[i % soundFiles.length],
+                loop: true,
+                autostart: true
+            });
+
+            const filter = new Tone.Filter({
+                type: "lowpass",
+                frequency: 100,
+                Q: 3,
+                rolloff: -48
+            });
+
+            const volume = new Tone.Volume(-60); // Start very quiet
+
+            const panner = new Tone.Panner3D({
+                panningModel: 'HRTF',
+                positionX: 0,
+                positionY: 0,
+                positionZ: 0
+            });
+
+            // Connect: player -> filter -> volume -> reverb -> output
+            player.connect(filter);
+            filter.connect(volume);
+            volume.connect(reverb);
+
+            redNoises.push({
+                source: player,
+                filter,
+                volume,
+                panner,
+                isOscillator: false
+            });
+        }
+
+        console.log(`Created ${redCount} audio players for red particles`);
+        audioInitialized = true;
+        console.log('Audio initialized - sounds started');
+    }
+}
+
+export function updateAudio(redSpeeds, particles, forceControls) {
+    if (!forceControls.soundEnabled || redSpeeds.length === 0 || !audioContextStarted) return;
+
+    // Initialize audio on first use
+    if (!audioInitialized) {
+        initAudio(redSpeeds.length);
+    }
+
+    const now = Tone.now();
+    const minFreq = 100;
+    const maxFreq = forceControls.soundFrequency * 2;
+    const minVol = -15;
+    const maxVol = -10;
+
+    // Update each red particle's audio
+    for (let i = 0; i < redSpeeds.length; i++) {
+        const { speed, bufferIndex } = redSpeeds[i];
+
+        // Get the particle to calculate distance
+        const particle = particles.find(p => p.bufferKind === 'RED' && p.bufferIndex === bufferIndex);
+        if (!particle) continue;
+
+        const audioChannel = redNoises[bufferIndex];
+
+        if (audioChannel) {
+            // Update 3D panner position (scale down for reasonable audio space)
+            const scale = 0.01;
+            audioChannel.panner.positionX.linearRampToValueAtTime(particle.position.x * scale, now + 0.05);
+            audioChannel.panner.positionY.linearRampToValueAtTime(particle.position.y * scale, now + 0.05);
+            audioChannel.panner.positionZ.linearRampToValueAtTime(particle.position.z * scale, now + 0.05);
+
+            // Map speed to filter frequency
+            const speedNormalized = Math.min(speed / forceControls.soundSpeedMax, 2);
+            let targetFreq = minFreq + (maxFreq - minFreq) * speedNormalized;
+
+            // Update filter frequency
+            audioChannel.filter.frequency.linearRampToValueAtTime(targetFreq, now + 0.05);
+
+            // Map speed to volume (louder when faster)
+            let targetVol = minVol + (maxVol - minVol) * speedNormalized;
+
+            // Smooth volume changes
+            audioChannel.volume.volume.linearRampToValueAtTime(targetVol, now + 0.05);
+        }
+    }
+}

@@ -4,7 +4,7 @@ const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const status = document.getElementById('status');
 
-let reverb, reverbConv, reverbPreDelay, filters = [], lfos = [], compressor;
+let reverb, reverbConv, filters = [], lfos = [], compressor;
 let shimmerShift, shimmerGain;
 let crackleInterval, chordInterval;
 let automationInterval;
@@ -15,8 +15,8 @@ const layers = {};
 
 // Control parameters
 const params = {
-    synth1Volume: -40,
-    synth2Volume: -40,
+    synth1Volume: -20,
+    synth2Volume: -20,
     bassVolume: -15,
     padVolume: -15,
     airVolume: -15,
@@ -198,53 +198,6 @@ function crackle() {
     layers.crackle.synths = [popSynth, hiss];
 }
 
-function createAmbientIR(rawContext, duration) {
-    const sr = rawContext.sampleRate;
-    const len = Math.floor(sr * duration);
-    const buffer = rawContext.createBuffer(2, len, sr);
-
-    for (let ch = 0; ch < 2; ch++) {
-        const data = buffer.getChannelData(ch);
-        let lpState = 0;
-
-        for (let i = 0; i < len; i++) {
-            const t = i / sr;
-            const progress = t / duration;
-            const decay = Math.exp(-5 * t / duration);
-            const lpCoeff = 0.05 + progress * 0.9;
-            const noise = Math.random() * 2 - 1;
-            lpState = lpState + (noise - lpState) * (1 - lpCoeff);
-            const mod = 1 + 0.12 * Math.sin(t * 0.7 + ch * 1.5) * Math.sin(t * 1.3);
-            data[i] = lpState * decay * mod;
-        }
-
-        const erTimes = ch === 0
-            ? [0.005, 0.012, 0.019, 0.028, 0.039, 0.052, 0.067, 0.085, 0.11, 0.14]
-            : [0.007, 0.015, 0.023, 0.033, 0.044, 0.058, 0.075, 0.095, 0.12, 0.16];
-
-        erTimes.forEach((time) => {
-            const idx = Math.floor(time * sr);
-            if (idx < len) {
-                const amp = 0.5 * Math.exp(-4 * time);
-                for (let j = 0; j < 4; j++) {
-                    if (idx + j < len) {
-                        data[idx + j] += (Math.random() * 2 - 1) * amp * (1 - j * 0.25);
-                    }
-                }
-            }
-        });
-
-        let max = 0;
-        for (let i = 0; i < len; i++) max = Math.max(max, Math.abs(data[i]));
-        if (max > 0) {
-            const scale = 0.7 / max;
-            for (let i = 0; i < len; i++) data[i] *= scale;
-        }
-    }
-
-    return buffer;
-}
-
 async function startDrone() {
     await Tone.start();
 
@@ -255,13 +208,11 @@ async function startDrone() {
     meter = new Tone.Meter();
     compressor.connect(meter);
 
-    // Custom convolution reverb
+    // Convolution reverb from IR file
     reverb = new Tone.Gain(1);
-    const ir = createAmbientIR(Tone.getContext().rawContext, 15);
-    reverbConv = new Tone.Convolver();
-    reverbConv._convolver.buffer = ir;
-    reverbPreDelay = new Tone.Delay(0.4);
-    reverb.chain(reverbPreDelay, reverbConv, compressor);
+    reverbConv = new Tone.Convolver('/sounds/Large Long Echo Hall.wav');
+    await reverbConv.loaded;
+    reverb.chain(reverbConv, compressor);
 
     // Shimmer
     shimmerGain = new Tone.Gain(0.25);
@@ -349,7 +300,6 @@ function stopDrone() {
         if (shimmerGain) shimmerGain.dispose();
         if (shimmerShift) shimmerShift.dispose();
         if (reverbConv) reverbConv.dispose();
-        if (reverbPreDelay) reverbPreDelay.dispose();
         if (reverb) reverb.dispose();
         filters.forEach(f => f.dispose());
         filters = [];

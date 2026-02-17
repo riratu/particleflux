@@ -4,37 +4,50 @@ const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const status = document.getElementById('status');
 
-const stemFiles = [
-    "/sounds/stems/01 Andrew's Note.mp3",
-    '/sounds/stems/03 Bleeps and More.mp3',
-    '/sounds/stems/04 v0 Kick.mp3',
-    '/sounds/stems/05 Polysynthnervös.mp3',
-    '/sounds/stems/06 Wedding Rhythm.mp3',
-    '/sounds/stems/07 Noise Bass.mp3',
-    '/sounds/stems/08 MM Choir In The Clouds.mp3',
-    '/sounds/stems/09 FH Cracker.mp3',
-    '/sounds/stems/10 Banshee.mp3',
-    '/sounds/stems/11 Grid Tom 3.mp3',
-    '/sounds/stems/12 v1 Clap.mp3',
-    '/sounds/stems/13 FM Steeldrum.mp3',
-    '/sounds/stems/15 Crystal Palace hoch.mp3',
-    '/sounds/stems/16 Crystal Palace tief.mp3',
-    '/sounds/stems/eines tages-001.wav',
-    '/sounds/stems/eines tages-002.wav',
-    '/sounds/stems/eines tages-003.wav',
-    '/sounds/stems/eines tages-004.wav',
+const padFiles = [
+    "/sounds/pads/01 Andrew's Note.mp3",
+    '/sounds/pads/07 Noise Bass.mp3',
+    '/sounds/pads/08 MM Choir In The Clouds.mp3',
+    '/sounds/pads/15 Crystal Palace hoch.mp3',
+    '/sounds/pads/16 Crystal Palace tief.mp3',
+    '/sounds/pads/eines tages-002.mp3',
+    '/sounds/pads/schreipad.mp3',
+    '/sounds/pads/space_drangels.mp3',
 ];
 
-const stemNames = stemFiles.map(f =>
-    f.split('/').pop().replace(/\.(mp3|wav)$/, '')
-);
+const toppingFiles = [
+    '/sounds/toppings/03 Bleeps and More.mp3',
+    '/sounds/toppings/04 v0 Kick.mp3',
+    '/sounds/toppings/05 Polysynthnervös.mp3',
+    '/sounds/toppings/06 Wedding Rhythm.mp3',
+    '/sounds/toppings/09 FH Cracker.mp3',
+    '/sounds/toppings/10 Banshee.mp3',
+    '/sounds/toppings/11 Grid Tom 3.mp3',
+    '/sounds/toppings/12 v1 Clap.mp3',
+    '/sounds/toppings/13 FM Steeldrum.mp3',
+    '/sounds/toppings/netter_bunsenbrenner.mp3',
+];
+
+const allFiles = [...padFiles, ...toppingFiles];
+
+function fileName(f) {
+    return f.split('/').pop().replace(/\.(mp3|wav)$/, '');
+}
 
 const oneshotFiles = [
     '/sounds/oneshots/14 v9 Crash.mp3',
+    '/sounds/oneshots/eines tages-004.mp3',
+    '/sounds/oneshots/langer_schnauzer.mp3',
 ];
 
-let players = [];
-let filters = [];
+const NUM_PAD_VOICES = 4;
+const NUM_TOPPING_VOICES = 4;
+const NUM_VOICES = NUM_PAD_VOICES + NUM_TOPPING_VOICES;
+const FADE_TIME = 10;
+const MIN_LOOPS = 4;
+const MAX_LOOPS = 15;
+
+let voices = [];
 let oneshotPlayers = [];
 let oneshotTimer = null;
 let oneshotIndicator = null;
@@ -48,48 +61,106 @@ let meter = null;
 let meterCanvas, meterCtx, meterAnimationId;
 let running = false;
 let animationId = null;
-let animationPaused = false;
+let lastAnimTime = 0;
+let voiceLabels = [];
+const sliderRefs = { vol: [], freq: [], reso: [] };
 
-// All slider refs for animation: { slider, valueDisplay, onChange, min, max }
-const sliderRefs = {
-    stemVol: [],
-    stemFreq: [],
-    stemReso: [],
-};
-
-// Manual override: when user drags a slider, pause automation for that param
-const OVERRIDE_DURATION = 5000; // ms
-const manualOverrides = {}; // key -> expiry timestamp
-
-function setManualOverride(stemIndex, param) {
-    manualOverrides[`${stemIndex}-${param}`] = Date.now() + OVERRIDE_DURATION;
+// Per-voice filter animation state
+const animState = [];
+for (let i = 0; i < NUM_VOICES; i++) {
+    animState.push({
+        freqPhase: (i / NUM_VOICES) * Math.PI * 2,
+        freqSpeed: 0.05 + Math.random() * 0.2,
+    });
 }
-
-function isOverridden(stemIndex, param) {
-    const key = `${stemIndex}-${param}`;
-    if (manualOverrides[key] && Date.now() < manualOverrides[key]) {
-        return true;
-    }
-    delete manualOverrides[key];
-    return false;
-}
-
-// Per-stem animation state: evenly distributed phases so they don't all go quiet at once
-const animState = stemNames.map((_, i) => ({
-    volPhase: (i / stemNames.length) * Math.PI * 2,
-    volSpeed: 0.1 + Math.random() * 0.3,
-    freqPhase: ((i + 0.5) / stemNames.length) * Math.PI * 2,
-    freqSpeed: 0.05 + Math.random() * 0.2,
-}));
 
 const params = {
     masterVolume: -6,
     spaceVerbSend: -3,
     hallVerbSend: -6,
-    stemVolumes: stemNames.map(() => -6),
-    stemFilterFreqs: stemNames.map(() => 20000),
-    stemFilterResos: stemNames.map(() => 15),
 };
+
+function cycleVoice(index) {
+    if (!running) return;
+
+    const isPad = index < NUM_PAD_VOICES;
+    const sourcePool = isPad ? padFiles : toppingFiles;
+
+    // Collect files currently playing in other voices
+    const activeFiles = new Set();
+    for (let i = 0; i < voices.length; i++) {
+        if (i !== index && voices[i] && voices[i].file) {
+            activeFiles.add(voices[i].file);
+        }
+    }
+
+    // Pick a file that isn't already playing
+    const available = sourcePool.filter(f => !activeFiles.has(f));
+    const pool = available.length > 0 ? available : sourcePool;
+    const file = pool[Math.floor(Math.random() * pool.length)];
+    const name = fileName(file);
+
+    const filter = new Tone.Filter({
+        type: 'lowpass',
+        frequency: 2000 + Math.random() * 16000,
+        Q: 5 + Math.random() * 10,
+        rolloff: -24,
+    });
+    filter.connect(masterVol);
+    filter.connect(convSend);
+    filter.connect(algoSend);
+
+    const player = new Tone.Player({
+        url: file,
+        loop: true,
+        volume: -60,
+        onerror: () => {
+            console.warn('Failed to load', file, '– skipping');
+            player.dispose();
+            filter.dispose();
+            setTimeout(() => cycleVoice(index), 500);
+        },
+        onload: () => {
+            if (!running) {
+                player.dispose();
+                filter.dispose();
+                return;
+            }
+
+            const duration = player.buffer.duration;
+            const loopCount = MIN_LOOPS + Math.floor(Math.random() * (MAX_LOOPS - MIN_LOOPS + 1));
+            const totalTime = duration * loopCount;
+
+            player.connect(filter);
+            player.start();
+            player.volume.rampTo(-6, FADE_TIME);
+
+            if (voiceLabels[index]) voiceLabels[index].textContent = name;
+
+            const fadeOutAt = Math.max(0, (totalTime - FADE_TIME) * 1000);
+            const fadeOutTimeout = setTimeout(() => {
+                if (!player.disposed) {
+                    player.volume.rampTo(-60, FADE_TIME);
+                }
+            }, fadeOutAt);
+
+            const stopTimeout = setTimeout(() => {
+                if (!player.disposed) {
+                    player.stop();
+                    player.dispose();
+                }
+                filter.dispose();
+                if (voiceLabels[index]) voiceLabels[index].textContent = '...';
+                cycleVoice(index);
+            }, totalTime * 1000);
+
+            voices[index] = { player, filter, file, timeouts: [fadeOutTimeout, stopTimeout] };
+        },
+    });
+
+    // Store reference immediately so it doesn't get lost
+    voices[index] = { player, filter, file, timeouts: [] };
+}
 
 async function startDrone() {
     await Tone.start();
@@ -100,50 +171,25 @@ async function startDrone() {
         threshold: -30,
         ratio: 5,
         attack: 0.05,
-        release: 0.2,
+        release: 0.8,
     });
     compressor.connect(meter);
     compressor.toDestination();
 
-    // Dry path
     masterVol = new Tone.Volume(params.masterVolume);
     masterVol.connect(compressor);
 
-    // Send 1: Convolver (space_verb.mp3)
     reverbConv = new Tone.Convolver({ url: '/sounds/space_verb.mp3', wet: 1 });
     convSend = new Tone.Volume(params.spaceVerbSend);
     convSend.connect(reverbConv);
     reverbConv.connect(compressor);
 
-    // Send 2: Algorithmic reverb
     reverbAlgo = new Tone.Reverb({ decay: 30, wet: 1, preDelay: 0.1 });
     algoSend = new Tone.Volume(params.hallVerbSend);
     algoSend.connect(reverbAlgo);
     reverbAlgo.connect(compressor);
 
-    for (let i = 0; i < stemFiles.length; i++) {
-        const filt = new Tone.Filter({
-            type: 'lowpass',
-            frequency: params.stemFilterFreqs[i],
-            Q: params.stemFilterResos[i],
-            rolloff: -24,
-        });
-        filt.connect(masterVol);
-        filt.connect(convSend);
-        filt.connect(algoSend);
-        filters.push(filt);
-
-        const player = new Tone.Player({
-            url: stemFiles[i],
-            loop: true,
-            autostart: true,
-            volume: params.stemVolumes[i],
-        });
-        player.connect(filt);
-        players.push(player);
-    }
-
-    // Oneshot players (not looped)
+    // Oneshot players
     for (const file of oneshotFiles) {
         const p = new Tone.Player({ url: file, loop: false });
         p.connect(masterVol);
@@ -155,29 +201,34 @@ async function startDrone() {
     running = true;
     startBtn.disabled = true;
     stopBtn.disabled = false;
-    status.textContent = 'Playing stems...';
+    status.textContent = 'Playing...';
     drawMeter();
     startAnimation();
     scheduleOneshot();
+
+    for (let i = 0; i < NUM_VOICES; i++) {
+        // stagger voice starts so they don't all load at once
+        setTimeout(() => cycleVoice(i), i * 200);
+    }
 }
 
 function stopDrone() {
     running = false;
 
-    if (animationId) { cancelAnimationFrame(animationId); animationId = null; }
+    if (animationId) { clearInterval(animationId); animationId = null; }
+
+    for (const v of voices) {
+        if (!v) continue;
+        v.timeouts.forEach(t => clearTimeout(t));
+        if (v.player && !v.player.disposed) { v.player.stop(); v.player.dispose(); }
+        if (v.filter && !v.filter.disposed) v.filter.dispose();
+    }
+    voices = [];
 
     if (oneshotTimer) { clearTimeout(oneshotTimer); oneshotTimer = null; }
     oneshotPlayers.forEach(p => p.dispose());
     oneshotPlayers = [];
 
-    players.forEach(p => {
-        p.stop();
-        p.dispose();
-    });
-    players = [];
-
-    filters.forEach(f => f.dispose());
-    filters = [];
     if (convSend) { convSend.dispose(); convSend = null; }
     if (reverbConv) { reverbConv.dispose(); reverbConv = null; }
     if (algoSend) { algoSend.dispose(); algoSend = null; }
@@ -187,6 +238,8 @@ function stopDrone() {
     if (meter) { meter.dispose(); meter = null; }
     if (meterAnimationId) { cancelAnimationFrame(meterAnimationId); meterAnimationId = null; }
 
+    voiceLabels.forEach(l => { if (l) l.textContent = '...'; });
+
     startBtn.disabled = false;
     stopBtn.disabled = true;
     status.textContent = 'Stopped';
@@ -194,24 +247,22 @@ function stopDrone() {
 
 function showOneshotIndicator(file) {
     if (!oneshotIndicator) return;
-    const name = file.split('/').pop().replace('.mp3', '');
-    oneshotIndicator.textContent = name;
+    oneshotIndicator.textContent = fileName(file);
     oneshotIndicator.style.opacity = '1';
     setTimeout(() => {
         if (oneshotIndicator) oneshotIndicator.style.opacity = '0';
     }, 3000);
 }
 
-// Random oneshot triggers
 function scheduleOneshot() {
     if (!running) return;
-    const delay = 5 + Math.random() * 40 * 1000;
+    const delay = 5000 + Math.random() * 40000;
     oneshotTimer = setTimeout(() => {
         if (!running) return;
         const idx = Math.floor(Math.random() * oneshotPlayers.length);
         const p = oneshotPlayers[idx];
         if (p && p.loaded) {
-            p.volume.value = -15 + Math.random() * 10; // -15 to -5 dB
+            p.volume.value = -15 + Math.random() * 10;
             p.start();
             showOneshotIndicator(oneshotFiles[idx]);
         }
@@ -219,55 +270,56 @@ function scheduleOneshot() {
     }, delay);
 }
 
-// Animate sliders with slow drifting sine waves
-let lastAnimTime = 0;
+const ANIM_INTERVAL = 250; // ms between slider/filter updates
 
 function startAnimation() {
     lastAnimTime = performance.now();
-    animateSliders();
+    animationId = setInterval(animate, ANIM_INTERVAL);
 }
 
-function animateSliders() {
+function animate() {
     if (!running) return;
 
     const now = performance.now();
     const dt = (now - lastAnimTime) / 1000;
     lastAnimTime = now;
 
-    for (let i = 0; i < stemNames.length; i++) {
-        const s = animState[i];
+    for (let i = 0; i < NUM_VOICES; i++) {
+        const v = voices[i];
+        if (!v || !v.player || v.player.disposed) continue;
 
-        if (animationPaused) continue;
-
-        // Advance phases
-        s.volPhase += s.volSpeed * dt;
-        s.freqPhase += s.freqSpeed * dt;
-
-        // Volume: drift between -25 and -3
-        if (!isOverridden(i, 'vol')) {
-            const volVal = Math.round(-14 + Math.sin(s.volPhase) * 11);
-            updateSlider(sliderRefs.stemVol[i], volVal);
-            params.stemVolumes[i] = volVal;
-            if (players[i]) players[i].volume.value = volVal;
+        // Update volume slider to reflect actual value (tracks rampTo)
+        const vol = v.player.volume.value;
+        const ref = sliderRefs.vol[i];
+        if (ref) {
+            ref.slider.value = vol;
+            ref.valueDisplay.textContent = Math.round(vol);
         }
 
-        // Filter freq: drift between 200 and 18000 (exponential feel via sin)
-        if (!isOverridden(i, 'freq')) {
-            const freqNorm = (Math.sin(s.freqPhase) + 1) / 2; // 0-1
-            const freqVal = Math.round(200 * Math.pow(18000 / 200, freqNorm));
-            updateSlider(sliderRefs.stemFreq[i], freqVal);
-            params.stemFilterFreqs[i] = freqVal;
-            if (filters[i]) filters[i].frequency.value = freqVal;
+        // Animate filter frequency with drifting sine
+        const s = animState[i];
+        s.freqPhase += s.freqSpeed * dt;
+        const freqNorm = (Math.sin(s.freqPhase) + 1) / 2;
+        const freqVal = Math.round(1500 * Math.pow(18000 / 1500, freqNorm));
+        if (v.filter && !v.filter.disposed) {
+            v.filter.frequency.value = freqVal;
+        }
+        const fRef = sliderRefs.freq[i];
+        if (fRef) {
+            fRef.slider.value = freqVal;
+            fRef.valueDisplay.textContent = freqVal;
+        }
+
+        // Update Q slider from actual filter value
+        if (v.filter && !v.filter.disposed) {
+            const qRef = sliderRefs.reso[i];
+            if (qRef) {
+                const q = v.filter.Q.value;
+                qRef.slider.value = q;
+                qRef.valueDisplay.textContent = Math.round(q);
+            }
         }
     }
-
-    animationId = requestAnimationFrame(animateSliders);
-}
-
-function updateSlider(ref, value) {
-    if (!ref) return;
-    ref.slider.value = value;
-    ref.valueDisplay.textContent = Number(value).toFixed(0);
 }
 
 function drawMeter() {
@@ -294,7 +346,7 @@ function drawMeter() {
     meterAnimationId = requestAnimationFrame(drawMeter);
 }
 
-function makeSlider(parent, label, min, max, step, value, onChange, overrideKey) {
+function makeSlider(parent, label, min, max, step, value, onChange) {
     const wrapper = document.createElement('div');
     wrapper.className = 'control';
 
@@ -315,7 +367,6 @@ function makeSlider(parent, label, min, max, step, value, onChange, overrideKey)
     slider.addEventListener('input', (e) => {
         const v = parseFloat(e.target.value);
         valueDisplay.textContent = v.toFixed(0);
-        if (overrideKey) setManualOverride(overrideKey.stem, overrideKey.param);
         onChange(v);
     });
 
@@ -327,10 +378,40 @@ function makeSlider(parent, label, min, max, step, value, onChange, overrideKey)
     return { slider, valueDisplay };
 }
 
+function makeVoiceGroup(i) {
+    const group = document.createElement('div');
+    group.className = 'stem-group';
+
+    const label = document.createElement('div');
+    label.className = 'stem-name';
+    label.textContent = '...';
+    group.appendChild(label);
+    voiceLabels[i] = label;
+
+    sliderRefs.vol[i] = makeSlider(group, 'V', -60, 0, 1, -6, (v) => {
+        if (voices[i] && voices[i].player && !voices[i].player.disposed) {
+            voices[i].player.volume.value = v;
+        }
+    });
+
+    sliderRefs.freq[i] = makeSlider(group, 'F', 20, 20000, 1, 10000, (v) => {
+        if (voices[i] && voices[i].filter && !voices[i].filter.disposed) {
+            voices[i].filter.frequency.value = v;
+        }
+    });
+
+    sliderRefs.reso[i] = makeSlider(group, 'Q', 0, 30, 0.1, 15, (v) => {
+        if (voices[i] && voices[i].filter && !voices[i].filter.disposed) {
+            voices[i].filter.Q.value = v;
+        }
+    });
+
+    return group;
+}
+
 function setupControls() {
     const controls = document.getElementById('controls');
 
-    // Master volume row
     const masterRow = document.createElement('div');
     masterRow.className = 'master-control';
     makeSlider(masterRow, 'Master', -60, 0, 1, params.masterVolume, (v) => {
@@ -345,13 +426,6 @@ function setupControls() {
         params.hallVerbSend = v;
         if (algoSend) algoSend.volume.value = v;
     });
-    const pauseBtn = document.createElement('button');
-    pauseBtn.textContent = 'Pause Animation';
-    pauseBtn.addEventListener('click', () => {
-        animationPaused = !animationPaused;
-        pauseBtn.textContent = animationPaused ? 'Resume Animation' : 'Pause Animation';
-    });
-    masterRow.appendChild(pauseBtn);
 
     oneshotIndicator = document.createElement('div');
     oneshotIndicator.style.cssText = 'color:#ff6; font-weight:bold; opacity:0; transition:opacity 0.3s ease-in, opacity 1.5s ease-out; padding:4px 8px;';
@@ -359,37 +433,29 @@ function setupControls() {
 
     controls.appendChild(masterRow);
 
-    // Grid of stem groups
-    const grid = document.createElement('div');
-    grid.className = 'stem-grid';
-    controls.appendChild(grid);
+    // Pad voices
+    const padHeading = document.createElement('h3');
+    padHeading.textContent = 'Pads';
+    controls.appendChild(padHeading);
 
-    stemNames.forEach((name, i) => {
-        const group = document.createElement('div');
-        group.className = 'stem-group';
+    const padGrid = document.createElement('div');
+    padGrid.className = 'stem-grid';
+    for (let i = 0; i < NUM_PAD_VOICES; i++) {
+        padGrid.appendChild(makeVoiceGroup(i));
+    }
+    controls.appendChild(padGrid);
 
-        const heading = document.createElement('div');
-        heading.className = 'stem-name';
-        heading.textContent = name;
-        group.appendChild(heading);
+    // Topping voices
+    const topHeading = document.createElement('h3');
+    topHeading.textContent = 'Toppings';
+    controls.appendChild(topHeading);
 
-        sliderRefs.stemVol[i] = makeSlider(group, 'V', -60, 0, 1, params.stemVolumes[i], (v) => {
-            params.stemVolumes[i] = v;
-            if (players[i]) players[i].volume.value = v;
-        }, { stem: i, param: 'vol' });
-
-        sliderRefs.stemFreq[i] = makeSlider(group, 'F', 20, 20000, 1, params.stemFilterFreqs[i], (v) => {
-            params.stemFilterFreqs[i] = v;
-            if (filters[i]) filters[i].frequency.value = v;
-        }, { stem: i, param: 'freq' });
-
-        sliderRefs.stemReso[i] = makeSlider(group, 'Q', 0, 30, 0.1, params.stemFilterResos[i], (v) => {
-            params.stemFilterResos[i] = v;
-            if (filters[i]) filters[i].Q.value = v;
-        }, { stem: i, param: 'reso' });
-
-        grid.appendChild(group);
-    });
+    const topGrid = document.createElement('div');
+    topGrid.className = 'stem-grid';
+    for (let i = NUM_PAD_VOICES; i < NUM_VOICES; i++) {
+        topGrid.appendChild(makeVoiceGroup(i));
+    }
+    controls.appendChild(topGrid);
 }
 
 startBtn.addEventListener('click', startDrone);

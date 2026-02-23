@@ -77,11 +77,15 @@ document.getElementById('start-audio-btn').addEventListener('click', async () =>
     if (!isAudioStarted()) {
         await startAudioContext();
         initAudio(redCount);
+        document.getElementById('helloBackground').classList.remove('hide');
         setupMixer();
         const btn = document.getElementById('start-audio-btn');
-        btn.textContent = 'Audio';
+        btn.textContent = 'Show Audio';
+        btn.classList.add('subtle');
         btn.onclick = () => {
-            document.getElementById('audio-panel').classList.toggle('hide');
+            const panel = document.getElementById('audio-panel');
+            const visible = panel.classList.toggle('hide');
+            btn.textContent = visible ? 'Show Audio' : 'Hide Audio';
         };
         console.log('Audio started');
     }
@@ -420,6 +424,7 @@ velocityVariable.material.uniforms['spaceAttraction'] = { value: 0.0 };
 velocityVariable.material.uniforms['maxForce'] = { value: 300.0 };
 velocityVariable.material.uniforms['forceMatrix'] = { value: new THREE.Matrix3() };
 velocityVariable.material.uniforms['speedMultiplier'] = { value: forceControls.speedMultiplier };
+velocityVariable.material.uniforms['zThrust'] = { value: 0.0 };
 
 positionVariable.material.uniforms['deltaTime'] = { value: 0.0 };
 positionVariable.material.uniforms['maxRadius'] = { value: forceControls.maxRadius };
@@ -443,13 +448,24 @@ function connectWebSocket() {
 
     ws = new WebSocket(`ws://${location.host}/keystroke-sync`);
 
+    const wsKeyTimers = {};
+
     ws.onmessage = (e) => {
         try {
             const data = JSON.parse(e.data);
             if (data.type === 'keydown') {
                 keysPressed[data.code] = true;
                 controller.press(data.code);
+                // Auto-release after 3s if keyup is lost
+                clearTimeout(wsKeyTimers[data.code]);
+                wsKeyTimers[data.code] = setTimeout(() => {
+                    keysPressed[data.code] = false;
+                    controller.release(data.code);
+                    delete wsKeyTimers[data.code];coolcool
+                }, 25000);
             } else if (data.type === 'keyup') {
+                clearTimeout(wsKeyTimers[data.code]);
+                delete wsKeyTimers[data.code];
                 keysPressed[data.code] = false;
                 controller.release(data.code);
             }
@@ -485,6 +501,9 @@ if (forceControls.websocketEnabled) {
 }
 
 document.addEventListener('keydown', (event) => {
+    const hint = document.getElementById('key-hint');
+    if (hint) { hint.style.opacity = '0'; setTimeout(() => hint.remove(), 2000); }
+
     keysPressed[event.code] = true;
     controller.press(event.code);
 
@@ -642,6 +661,7 @@ function updatePhysicsGPU(deltaTime) {
     velocityVariable.material.uniforms['mouse'].value.set(mouseX, mouseY);
     velocityVariable.material.uniforms['spaceAttraction'].value = keysPressed['Space'] ? 50 : 0;
     velocityVariable.material.uniforms['speedMultiplier'].value = controller.get('speedMultiplier');
+    velocityVariable.material.uniforms['zThrust'].value = controller.get('zThrust');
 
     updateForceMatrix();
 
@@ -744,6 +764,8 @@ function animate() {
     gui.updateDisplay();
 
     // Apply visual params from controller
+    camera.fov = controller.get('cameraFov');
+    camera.updateProjectionMatrix();
     otherMaterial.size = controller.get('particleSize');
     redMaterial.size = controller.get('particleSize') * 6;
     bloomPass.strength = controller.get('bloomStrength');

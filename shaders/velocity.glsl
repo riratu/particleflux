@@ -9,6 +9,7 @@ uniform vec2 mouse;
 uniform float spaceAttraction;
 uniform float maxForce;
 uniform float speedMultiplier;
+uniform float zThrust;
 
 // Force matrix: forces[from][to]
 uniform mat3 forceMatrix; // 3x3 for RED, GREEN, BLUE interactions
@@ -94,6 +95,9 @@ void main() {
         vec3 toZAxis = vec3(-position.x, -position.y, 0.0);
         force += toZAxis * spaceAttraction * deltaTime;
     }
+
+    // Z thrust (starflight rush)
+    velocity.z += zThrust * deltaTime;
 
     // Update velocity
     velocity += force;

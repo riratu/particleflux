@@ -9,8 +9,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
-import { startAudioContext, isAudioStarted, initAudio, updateAudio } from './audio.js';
+import { startAudioContext, isAudioStarted, initAudio, updateAudio, applyAudioParams } from './audio.js';
 import { setupAudio as setupMixer, setRandomAvScene } from './audio/audio.js';
+import { MomentaryController } from './controller.js';
 import velocityShader from './shaders/velocity.glsl?raw';
 import positionShader from './shaders/position.glsl?raw';
 
@@ -46,7 +47,6 @@ let mouseX = window.innerWidth / 2;
 let mouseY = window.innerHeight / 2;
 let mouseButtonsClicked = [];
 let spatialGrid = new Map();
-let currentMaxRadius = 200.0; // Interpolated maxRadius for smooth transitions
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 5);
 scene.add(ambientLight);
@@ -78,8 +78,11 @@ document.getElementById('start-audio-btn').addEventListener('click', async () =>
         await startAudioContext();
         initAudio(redCount);
         setupMixer();
-        document.getElementById('start-audio-btn').remove();
-        document.getElementById('audio-panel').classList.remove('hide');
+        const btn = document.getElementById('start-audio-btn');
+        btn.textContent = 'Audio';
+        btn.onclick = () => {
+            document.getElementById('audio-panel').classList.toggle('hide');
+        };
         console.log('Audio started');
     }
 });
@@ -139,8 +142,10 @@ const defaultForceControls = {
     gravity: 247,
     particleCount: 6000,
     soundSpeedMax: 100,
-    soundFrequency: 440,
+    soundFrequency: 10000,
     soundEnabled: true,
+    filterQ: 15,
+    reverbWet: 0.9,
     maxRadius: 200.0,
     speedMultiplier: 1.0,
     websocketEnabled: false,
@@ -168,17 +173,21 @@ function loadSettings() {
     return { ...defaultForceControls };
 }
 
+// Single source of truth for forces
+let forceControls = loadSettings();
+
+// Baseline tracks user-set values (GUI sliders). Controller reads from this.
+// forceControls gets overwritten each frame with effective (baseline + offsets) values for display.
+const forceBaseline = { ...forceControls };
+
 // Save settings to localStorage
 function saveSettings() {
     try {
-        localStorage.setItem('particleSettings', JSON.stringify(forceControls));
+        localStorage.setItem('particleSettings', JSON.stringify(forceBaseline));
     } catch (e) {
         console.warn('Failed to save settings to localStorage:', e);
     }
 }
-
-// Single source of truth for forces
-let forceControls = loadSettings();
 
 // Update GUI
 const gui = new GUI();
@@ -210,6 +219,8 @@ const soundFolder = gui.addFolder('Sound');
 soundFolder.add(forceControls, 'soundEnabled').onChange(saveSettings);
 soundFolder.add(forceControls, 'soundSpeedMax', 5, 500).onChange(saveSettings);
 soundFolder.add(forceControls, 'soundFrequency', 100, 10000).onChange(saveSettings);
+soundFolder.add(forceControls, 'filterQ', 0.5, 30).onChange(saveSettings).name('Filter Q');
+soundFolder.add(forceControls, 'reverbWet', 0, 1, 0.01).onChange(saveSettings).name('Reverb Wet');
 
 const networkFolder = gui.addFolder('Network');
 networkFolder.add(forceControls, 'websocketEnabled').onChange((enabled) => {
@@ -235,6 +246,7 @@ function randomizeForces() {
 // Reset to default values
 function resetToDefaults() {
     Object.assign(forceControls, defaultForceControls);
+    Object.assign(forceBaseline, defaultForceControls);
     gui.updateDisplay();
     saveSettings();
     reloadParticles();
@@ -248,6 +260,31 @@ function reloadParticles() {
 gui.add({ reset: resetToDefaults }, 'reset').name('Reset to Defaults');
 
 gui.close();
+
+// Wrap all GUI onChange callbacks to keep forceBaseline in sync.
+// gui.updateDisplay() does NOT trigger onChange, so this only fires on real user interaction.
+(function trackBaseline(folder) {
+    for (const ctrl of folder.__controllers) {
+        if (ctrl.property in forceBaseline) {
+            const orig = ctrl.__onChange;
+            ctrl.__onChange = function (value) {
+                forceBaseline[ctrl.property] = value;
+                if (orig) orig.call(this, value);
+            };
+        }
+    }
+    for (const key of Object.keys(folder.__folders || {})) {
+        trackBaseline(folder.__folders[key]);
+    }
+})(gui);
+
+// Keys whose effective values get written back to forceControls for GUI display
+const displayKeys = [
+    'gravity', 'maxRadius', 'repulsionRange', 'repulsionStrength', 'speedMultiplier',
+    'particleSize',
+    'RED-RED', 'RED-GREEN', 'RED-BLUE', 'GREEN-RED', 'GREEN-GREEN', 'GREEN-BLUE',
+    'BLUE-RED', 'BLUE-BLUE', 'BLUE-GREEN', 'filterQ', 'reverbWet'
+];
 
 // const bokehFolder = gui.addFolder('Bokeh');
 // bokehFolder.add(forceControls, 'bokehFocus', 0, 10000).onChange(() => {
@@ -392,7 +429,9 @@ if (error !== null) {
     console.error('GPUComputationRenderer error:', error);
 }
 
-const keysPressed = { };
+const keysPressed = {};
+const controller = new MomentaryController();
+controller.syncBaseline(forceBaseline);
 
 // WebSocket connection to sync keystrokes across devices
 let ws = null;
@@ -407,17 +446,13 @@ function connectWebSocket() {
     ws.onmessage = (e) => {
         try {
             const data = JSON.parse(e.data);
-            // Only process our keystroke messages, ignore Vite HMR and other messages
             if (data.type === 'keydown') {
-                console.log('Received keydown:', data.code);
                 keysPressed[data.code] = true;
-                handleKeyDown(data.code);
+                controller.press(data.code);
             } else if (data.type === 'keyup') {
-                console.log('Received keyup:', data.code);
                 keysPressed[data.code] = false;
-                handleKeyUp(data.code);
+                controller.release(data.code);
             }
-            // Silently ignore other message types (like Vite HMR)
         } catch (err) {
             // Ignore parsing errors from non-JSON messages
         }
@@ -449,59 +484,10 @@ if (forceControls.websocketEnabled) {
     connectWebSocket();
 }
 
-// Map keys 1-9 and 0 to GUI properties with boosted values for temporary manipulation
-const keyBindings = {
-    'Digit1': { property: 'maxRadius', boosted: 2000 },
-    'Digit2': { property: 'gravity', boosted: 0 },
-    'Digit3': { property: 'RED-BLUE', boosted: -10 },
-    'Digit4': { property: 'GREEN-RED', boosted: 20 },
-    'Digit5': { property: 'GREEN-GREEN', boosted: 6 },
-    'Digit6': { property: 'GREEN-BLUE', boosted: 20 },
-    'Digit7': { property: 'repulsionRange', boosted: 20 },
-    'Digit8': { property: 'BLUE-BLUE', boosted: 20 },
-    'Digit9': { property: 'BLUE-GREEN', boosted: 20 },
-    'Digit0': { property: 'gravity', boosted: 4000 }
-};
-
-// Store original values when keys are pressed
-const originalValues = {};
-
-// Handler for keydown logic
-function handleKeyDown(code) {
-    // R key to randomize
-    if (code === 'KeyR') {
-        randomizeForces();
-    }
-
-    // Handle number keys for GUI manipulation
-    const binding = keyBindings[code];
-    if (binding && !originalValues.hasOwnProperty(code)) {
-        // Store original value
-        originalValues[code] = forceControls[binding.property];
-        // Set boosted value
-        forceControls[binding.property] = binding.boosted;
-        // Update GUI display
-        gui.updateDisplay();
-    }
-}
-
-// Handler for keyup logic
-function handleKeyUp(code) {
-    // Restore original value when key is released
-    const binding = keyBindings[code];
-    if (binding && originalValues.hasOwnProperty(code)) {
-        forceControls[binding.property] = originalValues[code];
-        delete originalValues[code];
-        // Update GUI display
-        gui.updateDisplay();
-    }
-}
-
 document.addEventListener('keydown', (event) => {
     keysPressed[event.code] = true;
-    handleKeyDown(event.code);
+    controller.press(event.code);
 
-    // Send keystroke to other devices via WebSocket if enabled
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'keydown', code: event.code }));
     }
@@ -509,11 +495,10 @@ document.addEventListener('keydown', (event) => {
 
 document.addEventListener('keyup', (event) => {
     keysPressed[event.code] = false;
-    handleKeyUp(event.code);
+    controller.release(event.code);
 
-    // Send keystroke to other devices via WebSocket if enabled
     if (ws && ws.readyState === WebSocket.OPEN) {
-       ws.send(JSON.stringify({ type: 'keyup', code: event.code }));
+        ws.send(JSON.stringify({ type: 'keyup', code: event.code }));
     }
 });
 
@@ -596,14 +581,13 @@ composer.addPass(outputPass);
 // } );
 // composer.addPass( bokehPass );
 
-// Helper to update force matrix from forceControls
+// Helper to update force matrix from controller
 function updateForceMatrix() {
     const matrix = velocityVariable.material.uniforms['forceMatrix'].value;
-    // Matrix layout: [RED][GREEN][BLUE] rows, [RED][GREEN][BLUE] columns
     matrix.set(
-        forceControls['RED-RED'], forceControls['RED-GREEN'], forceControls['RED-BLUE'],
-        forceControls['GREEN-RED'], forceControls['GREEN-GREEN'], forceControls['GREEN-BLUE'],
-        forceControls['BLUE-RED'], forceControls['BLUE-GREEN'], forceControls['BLUE-BLUE']
+        controller.get('RED-RED'), controller.get('RED-GREEN'), controller.get('RED-BLUE'),
+        controller.get('GREEN-RED'), controller.get('GREEN-GREEN'), controller.get('GREEN-BLUE'),
+        controller.get('BLUE-RED'), controller.get('BLUE-GREEN'), controller.get('BLUE-BLUE')
     );
 }
 
@@ -650,23 +634,19 @@ function getNearbyCells(x, y, z) {
 
 
 function updatePhysicsGPU(deltaTime) {
-    // Update uniforms
+    // Update uniforms from controller (smooth interpolated values)
     velocityVariable.material.uniforms['deltaTime'].value = deltaTime;
-    velocityVariable.material.uniforms['repulsionRange'].value = forceControls.repulsionRange;
-    velocityVariable.material.uniforms['repulsionStrength'].value = forceControls.repulsionStrength;
-    velocityVariable.material.uniforms['gravity'].value = forceControls.gravity;
+    velocityVariable.material.uniforms['repulsionRange'].value = controller.get('repulsionRange');
+    velocityVariable.material.uniforms['repulsionStrength'].value = controller.get('repulsionStrength');
+    velocityVariable.material.uniforms['gravity'].value = controller.get('gravity');
     velocityVariable.material.uniforms['mouse'].value.set(mouseX, mouseY);
     velocityVariable.material.uniforms['spaceAttraction'].value = keysPressed['Space'] ? 50 : 0;
-    velocityVariable.material.uniforms['speedMultiplier'].value = forceControls.speedMultiplier;
+    velocityVariable.material.uniforms['speedMultiplier'].value = controller.get('speedMultiplier');
 
     updateForceMatrix();
 
     positionVariable.material.uniforms['deltaTime'].value = deltaTime;
-
-    // Smoothly interpolate maxRadius toward target
-    const lerpSpeed = 3.0; // Adjust for faster/slower transitions
-    currentMaxRadius += (forceControls.maxRadius - currentMaxRadius) * Math.min(deltaTime * lerpSpeed, 1);
-    positionVariable.material.uniforms['maxRadius'].value = currentMaxRadius;
+    positionVariable.material.uniforms['maxRadius'].value = controller.get('maxRadius');
 
     // Compute on GPU
     gpuCompute.compute();
@@ -753,8 +733,33 @@ function animate() {
     const deltaTime = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
-    // Slowly rotate the whole scene
-    scene.rotation.y += 0.003;
+    // Controller: sync baseline from user-set values, then interpolate
+    controller.syncBaseline(forceBaseline);
+    controller.update(deltaTime);
+
+    // Write effective values back to forceControls so GUI sliders move
+    for (const key of displayKeys) {
+        forceControls[key] = controller.get(key);
+    }
+    gui.updateDisplay();
+
+    // Apply visual params from controller
+    otherMaterial.size = controller.get('particleSize');
+    redMaterial.size = controller.get('particleSize') * 6;
+    bloomPass.strength = controller.get('bloomStrength');
+    bloomPass.radius = controller.get('bloomRadius');
+    scene.fog.near = controller.get('fogNear');
+    scene.fog.far = controller.get('fogFar');
+    renderer.toneMappingExposure = controller.get('exposure');
+    scene.rotation.y += controller.get('rotationSpeed');
+
+    // Apply audio params from controller
+    applyAudioParams({
+        filterQ: controller.get('filterQ'),
+        reverbWet: controller.get('reverbWet'),
+        minVol: controller.get('minVol'),
+        maxVol: controller.get('maxVol'),
+    });
 
     updatePhysicsGPU(deltaTime);
     composer.render();

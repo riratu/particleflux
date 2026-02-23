@@ -4,6 +4,31 @@ let audioContextStarted = false;
 let redNoises = [];
 let reverb = null;
 
+// Exposed audio params — controller pushes values here each frame
+export const audioParams = {
+    filterQ: 15,
+    reverbWet: 0.9,
+    minVol: -15,
+    maxVol: -10,
+};
+
+export function applyAudioParams(params) {
+    if (!audioInitialized) return;
+
+    if (params.filterQ !== undefined) {
+        audioParams.filterQ = params.filterQ;
+        for (const ch of redNoises) {
+            ch.filter.Q.value = params.filterQ;
+        }
+    }
+    if (params.reverbWet !== undefined) {
+        audioParams.reverbWet = params.reverbWet;
+        if (reverb) reverb.wet.value = params.reverbWet;
+    }
+    if (params.minVol !== undefined) audioParams.minVol = params.minVol;
+    if (params.maxVol !== undefined) audioParams.maxVol = params.maxVol;
+}
+
 export async function startAudioContext() {
     if (!audioContextStarted) {
         console.log('Starting Tone.js...');
@@ -35,29 +60,19 @@ export function initAudio(redCount) {
         reverb.toDestination();
 
         // Sound files for each red particle
-        const soundFiles = [
-            'sounds/neu/giti_drone.mp3',
-            'sounds/neu/Gittipad.wav',
-            'sounds/neu/sphere.mp3'
-        ];
-
         // Create audio players for each red particle
         for (let i = 0; i < redCount; i++) {
-            // Create a looping player for the sound file
-            const player = new Tone.Player({
-                url: soundFiles[i % soundFiles.length],
-                loop: true,
-                autostart: true
-            });
+            const noise = new Tone.Noise('white');
+            noise.start();
 
             const filter = new Tone.Filter({
-                type: "lowpass",
-                frequency: 100,
-                Q: 3,
-                rolloff: -48
+                type: "bandpass",
+                frequency: 5000,
+                Q: 15,
+                rolloff: -24
             });
 
-            const volume = new Tone.Volume(-60); // Start very quiet
+            const volume = new Tone.Volume(-2);
 
             const panner = new Tone.Panner3D({
                 panningModel: 'HRTF',
@@ -66,13 +81,13 @@ export function initAudio(redCount) {
                 positionZ: 0
             });
 
-            // Connect: player -> filter -> volume -> reverb -> output
-            player.connect(filter);
+            // Connect: noise -> filter -> volume -> reverb -> output
+            noise.connect(filter);
             filter.connect(volume);
             volume.connect(reverb);
 
             redNoises.push({
-                source: player,
+                source: noise,
                 filter,
                 volume,
                 panner,
@@ -97,8 +112,8 @@ export function updateAudio(redSpeeds, particles, forceControls) {
     const now = Tone.now();
     const minFreq = 100;
     const maxFreq = forceControls.soundFrequency * 2;
-    const minVol = -15;
-    const maxVol = -10;
+    const minVol = audioParams.minVol;
+    const maxVol = audioParams.maxVol;
 
     // Update each red particle's audio
     for (let i = 0; i < redSpeeds.length; i++) {

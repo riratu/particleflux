@@ -1,5 +1,4 @@
-import * as Tone from 'tone';
-
+export let Tone = null;
 let audioInitialized = false;
 let audioContextStarted = false;
 let redNoises = [];
@@ -8,7 +7,10 @@ let reverb = null;
 export async function startAudioContext() {
     if (!audioContextStarted) {
         console.log('Starting Tone.js...');
+        Tone = await import('tone');
         await Tone.start();
+        Tone.context.lookAhead = 1;
+        Tone.context.updateInterval = 0.2;
         console.log('Tone.js started, context state:', Tone.context.state);
         audioContextStarted = true;
     }

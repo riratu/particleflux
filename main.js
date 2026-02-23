@@ -10,6 +10,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import { startAudioContext, isAudioStarted, initAudio, updateAudio } from './audio.js';
+import { setupAudio as setupMixer, setRandomAvScene } from './audio/audio.js';
 import velocityShader from './shaders/velocity.glsl?raw';
 import positionShader from './shaders/position.glsl?raw';
 
@@ -71,14 +72,22 @@ window.oncontextmenu = function () {
     return false;
 }
 
-// Start audio context on user interaction
-document.addEventListener('click', async () => {
+// Start audio only when user clicks the button
+document.getElementById('start-audio-btn').addEventListener('click', async () => {
     if (!isAudioStarted()) {
         await startAudioContext();
         initAudio(redCount);
+        setupMixer();
+        document.getElementById('start-audio-btn').remove();
+        document.getElementById('audio-panel').classList.remove('hide');
         console.log('Audio started');
     }
-}, { once: true });
+});
+
+// Random music button
+document.getElementById('randomMusicBtn').addEventListener('click', () => {
+    setRandomAvScene();
+});
 
 // Placeholder declarations; actual counts are defined after forceControls
 let redCount;

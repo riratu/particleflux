@@ -510,9 +510,9 @@ if (forceControls.websocketEnabled) {
 
 // Shared press/release — used by keyboard, Launchpad, and WebSocket
 function handlePress(code) {
+    if (!keysPressed[code]) playKeyOneshot(code);
     keysPressed[code] = true;
     controller.press(code);
-    playKeyOneshot(code);
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'keydown', code }));
     }

@@ -1,0 +1,113 @@
+:root {
+    --slider-radius: 2px;
+}
+
+input[type="range"] {
+    /* removing default appearance */
+    -webkit-appearance: none;
+    appearance: none;
+    /* creating a custom design */
+    width: 100%;
+    cursor: pointer;
+    outline: saddlebrown;
+    background: none;
+    border-radius: var(--slider-radius);
+    height: 15px;
+    display: block;
+
+    overflow: hidden;
+}
+
+input[type="range"].expert {
+    margin-top: -2px;
+}
+
+input[type="range"].disabled {
+    background: #4CAF50;
+}
+
+/* Track: webkit browsers */
+input[type="range"]::-webkit-slider-runnable-track {
+    height: 15px;
+    background: #333;
+    border-radius: var(--slider-radius);
+    box-shadow: 0px -10px 20px 0px #fff;
+}
+
+/* Track: Mozilla Firefox */
+input[type="range"]::-moz-range-track {
+    height: 15px;
+    background: #333;
+    border-radius: var(--slider-radius);
+    box-shadow: 0px -10px 20px 0px #fff;
+}
+
+ /*Thumb: webkit*/
+input[type="range"]::-webkit-slider-thumb {
+    /* removing default appearance */
+    -webkit-appearance: none;
+    appearance: none;
+    /* creating a custom design */
+    height: 15px;
+    width: 15px;
+    background-color: #aaa;
+    border-radius: 10px;
+    border: none;
+    box-shadow: -407px 0 0 400px #aaa;
+}
+
+/* Thumb: Firefox */
+input[type="range"]::-moz-range-thumb {
+    height: 15px;
+    width: 15px;
+    background-color: #aaa;
+    border-radius: var(--slider-radius);
+    /*border-radius: 0px;*/
+    border: none;
+    box-shadow: -407px 0 0 400px #555;
+}
+
+/* Thumb: Firefox */
+input[type="range"]:disabled::-moz-range-thumb {
+    opacity: 30%;
+    background: #999;
+}
+
+/* Filter slider — distinct color */
+input[type="range"].filter-slider::-webkit-slider-thumb {
+    background-color: #6af;
+    box-shadow: -407px 0 0 400px #346;
+}
+input[type="range"].filter-slider::-moz-range-thumb {
+    background-color: #6af;
+    box-shadow: -407px 0 0 400px #346;
+}
+input[type="range"].filter-slider::-webkit-slider-runnable-track {
+    box-shadow: 0px -10px 20px 0px #6af;
+}
+
+/* Delay slider — green/teal color */
+input[type="range"].delay-slider::-webkit-slider-thumb {
+    background-color: #6fa;
+    box-shadow: -407px 0 0 400px #364;
+}
+input[type="range"].delay-slider::-moz-range-thumb {
+    background-color: #6fa;
+    box-shadow: -407px 0 0 400px #364;
+}
+input[type="range"].delay-slider::-webkit-slider-runnable-track {
+    box-shadow: 0px -10px 20px 0px #6fa;
+}
+
+/* Q (resonance) slider — orange/amber color */
+input[type="range"].q-slider::-webkit-slider-thumb {
+    background-color: #fa6;
+    box-shadow: -407px 0 0 400px #643;
+}
+input[type="range"].q-slider::-moz-range-thumb {
+    background-color: #fa6;
+    box-shadow: -407px 0 0 400px #643;
+}
+input[type="range"].q-slider::-webkit-slider-runnable-track {
+    box-shadow: 0px -10px 20px 0px #fa6;
+}

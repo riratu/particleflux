@@ -155,6 +155,7 @@ const defaultForceControls = {
     reverbWet: 0.9,
     maxRadius: 200.0,
     speedMultiplier: 1.0,
+    zFlow: 0,
     websocketEnabled: false,
     launchpadEnabled: false,
     'RED-RED': 2,
@@ -206,6 +207,7 @@ generalFolder.add(forceControls, 'repulsionRange', 1, 500).onChange(saveSettings
 generalFolder.add(forceControls, 'gravity', 0.01, 2000).onChange(saveSettings);
 generalFolder.add(forceControls, 'particleSize', 0.1, 3).onChange(() => { updateParticleSize(); saveSettings(); });
 generalFolder.add(forceControls, 'maxRadius', 1, 1000).onChange(saveSettings);
+generalFolder.add(forceControls, 'zFlow', 0, 5000).onChange(saveSettings).name('Z Flow');
 generalFolder.add(forceControls, 'particleCount', 100, 50000, 100).onChange(saveSettings).name('Particle Count');
 generalFolder.add({ reload: reloadParticles }, 'reload').name('Apply Particle count');
 generalFolder.open()
@@ -294,7 +296,7 @@ gui.close();
 
 // Keys whose effective values get written back to forceControls for GUI display
 const displayKeys = [
-    'gravity', 'maxRadius', 'repulsionRange', 'repulsionStrength', 'speedMultiplier',
+    'gravity', 'maxRadius', 'repulsionRange', 'repulsionStrength', 'speedMultiplier', 'zFlow',
     'particleSize',
     'RED-RED', 'RED-GREEN', 'RED-BLUE', 'GREEN-RED', 'GREEN-GREEN', 'GREEN-BLUE',
     'BLUE-RED', 'BLUE-BLUE', 'BLUE-GREEN', 'filterQ', 'reverbWet'
@@ -435,9 +437,11 @@ velocityVariable.material.uniforms['maxForce'] = { value: 300.0 };
 velocityVariable.material.uniforms['forceMatrix'] = { value: new THREE.Matrix3() };
 velocityVariable.material.uniforms['speedMultiplier'] = { value: forceControls.speedMultiplier };
 velocityVariable.material.uniforms['zThrust'] = { value: 0.0 };
+velocityVariable.material.uniforms['zFlow'] = { value: 0.0 };
 
 positionVariable.material.uniforms['deltaTime'] = { value: 0.0 };
 positionVariable.material.uniforms['maxRadius'] = { value: forceControls.maxRadius };
+positionVariable.material.uniforms['zFlow'] = { value: 0.0 };
 
 const error = gpuCompute.init();
 if (error !== null) {
@@ -692,11 +696,13 @@ function updatePhysicsGPU(deltaTime) {
     velocityVariable.material.uniforms['spaceAttraction'].value = keysPressed['Space'] ? 50 : 0;
     velocityVariable.material.uniforms['speedMultiplier'].value = controller.get('speedMultiplier');
     velocityVariable.material.uniforms['zThrust'].value = controller.get('zThrust');
+    velocityVariable.material.uniforms['zFlow'].value = controller.get('zFlow');
 
     updateForceMatrix();
 
     positionVariable.material.uniforms['deltaTime'].value = deltaTime;
     positionVariable.material.uniforms['maxRadius'].value = controller.get('maxRadius');
+    positionVariable.material.uniforms['zFlow'].value = controller.get('zFlow');
 
     // Compute on GPU
     gpuCompute.compute();

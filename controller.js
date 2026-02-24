@@ -10,6 +10,7 @@ const PARAMS = {
   repulsionStrength: { min: 0.1,  max: 10,   default: 1 },
   speedMultiplier:   { min: 0.01, max: 3.0,  default: 1.0 },
   zThrust:           { min: -3000, max: 3000, default: 0 },
+  zFlow:             { min: -3000, max: 3000, default: 0 },
   // Force matrix
   'RED-RED':     { min: -10, max: 10, default: 2 },
   'RED-GREEN':   { min: -10, max: 10, default: -0.7 },

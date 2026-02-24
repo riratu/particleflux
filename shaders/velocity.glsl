@@ -10,6 +10,7 @@ uniform float spaceAttraction;
 uniform float maxForce;
 uniform float speedMultiplier;
 uniform float zThrust;
+uniform float zFlow;
 
 // Force matrix: forces[from][to]
 uniform mat3 forceMatrix; // 3x3 for RED, GREEN, BLUE interactions
@@ -98,6 +99,9 @@ void main() {
 
     // Z thrust (starflight rush)
     velocity.z += zThrust * deltaTime;
+
+    // Z flow (continuous tunnel drift)
+    velocity.z += zFlow * deltaTime;
 
     // Update velocity
     velocity += force;

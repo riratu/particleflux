@@ -5,27 +5,27 @@ const stopBtn = document.getElementById('stopBtn');
 const status = document.getElementById('status');
 
 const padFiles = [
-    "/sounds/pads/01 Andrew's Note.mp3",
-    '/sounds/pads/07 Noise Bass.mp3',
-    '/sounds/pads/08 MM Choir In The Clouds.mp3',
-    '/sounds/pads/15 Crystal Palace hoch.mp3',
-    '/sounds/pads/16 Crystal Palace tief.mp3',
-    '/sounds/pads/eines tages-002.mp3',
-    '/sounds/pads/schreipad.mp3',
-    '/sounds/pads/space_drangels.mp3',
+    "/sounds/compressed/pads/01 Andrew's Note.mp3",
+    '/sounds/compressed/pads/07 Noise Bass.mp3',
+    '/sounds/compressed/pads/08 MM Choir In The Clouds.mp3',
+    '/sounds/compressed/pads/15 Crystal Palace hoch.mp3',
+    '/sounds/compressed/pads/16 Crystal Palace tief.mp3',
+    '/sounds/compressed/pads/eines tages-002.mp3',
+    '/sounds/compressed/pads/schreipad.mp3',
+    '/sounds/compressed/pads/space_drangels.mp3',
 ];
 
 const toppingFiles = [
-    '/sounds/toppings/03 Bleeps and More.mp3',
-    '/sounds/toppings/04 v0 Kick.mp3',
-    '/sounds/toppings/05 Polysynthnervös.mp3',
-    '/sounds/toppings/06 Wedding Rhythm.mp3',
-    '/sounds/toppings/09 FH Cracker.mp3',
-    '/sounds/toppings/10 Banshee.mp3',
-    '/sounds/toppings/11 Grid Tom 3.mp3',
-    '/sounds/toppings/12 v1 Clap.mp3',
-    '/sounds/toppings/13 FM Steeldrum.mp3',
-    '/sounds/toppings/netter_bunsenbrenner.mp3',
+    '/sounds/compressed/toppings/03 Bleeps and More.mp3',
+    '/sounds/compressed/toppings/04 v0 Kick.mp3',
+    '/sounds/compressed/toppings/05 Polysynthnervös.mp3',
+    '/sounds/compressed/toppings/06 Wedding Rhythm.mp3',
+    '/sounds/compressed/toppings/09 FH Cracker.mp3',
+    '/sounds/compressed/toppings/10 Banshee.mp3',
+    '/sounds/compressed/toppings/11 Grid Tom 3.mp3',
+    '/sounds/compressed/toppings/12 v1 Clap.mp3',
+    '/sounds/compressed/toppings/13 FM Steeldrum.mp3',
+    '/sounds/compressed/toppings/netter_bunsenbrenner.mp3',
 ];
 
 const allFiles = [...padFiles, ...toppingFiles];
@@ -35,9 +35,9 @@ function fileName(f) {
 }
 
 const oneshotFiles = [
-    '/sounds/oneshots/14 v9 Crash.mp3',
-    '/sounds/oneshots/eines tages-004.mp3',
-    '/sounds/oneshots/langer_schnauzer.mp3',
+    '/sounds/compressed/oneshots/14 v9 Crash.mp3',
+    '/sounds/compressed/oneshots/eines tages-004.mp3',
+    '/sounds/compressed/oneshots/langer_schnauzer.mp3',
 ];
 
 const NUM_PAD_VOICES = 4;

@@ -10,8 +10,9 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import { startAudioContext, isAudioStarted, initAudio, updateAudio, applyAudioParams } from './audio.js';
-import { setupAudio as setupMixer, setRandomAvScene } from './audio/audio.js';
+import { setupAudio as setupMixer, setRandomAvScene, playKeyOneshot } from './audio/audio.js';
 import { MomentaryController } from './controller.js';
+import { setupLaunchpad } from './launchpad.js';
 import velocityShader from './shaders/velocity.glsl?raw';
 import positionShader from './shaders/position.glsl?raw';
 
@@ -153,6 +154,7 @@ const defaultForceControls = {
     maxRadius: 200.0,
     speedMultiplier: 1.0,
     websocketEnabled: false,
+    launchpadEnabled: false,
     'RED-RED': 2,
     'RED-GREEN': -0.7,
     'RED-BLUE': 0.5,
@@ -235,6 +237,12 @@ networkFolder.add(forceControls, 'websocketEnabled').onChange((enabled) => {
         disconnectWebSocket();
     }
 }).name('WebSocket Sync');
+networkFolder.add(forceControls, 'launchpadEnabled').onChange((enabled) => {
+    saveSettings();
+    if (enabled) {
+        setupLaunchpad(controller, handlePress, handleRelease);
+    }
+}).name('Launchpad MIDI');
 
 // Randomize particle forces using their min/max
 function randomizeForces() {
@@ -500,26 +508,38 @@ if (forceControls.websocketEnabled) {
     connectWebSocket();
 }
 
+// Shared press/release — used by keyboard, Launchpad, and WebSocket
+function handlePress(code) {
+    keysPressed[code] = true;
+    controller.press(code);
+    playKeyOneshot(code);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'keydown', code }));
+    }
+}
+
+function handleRelease(code) {
+    keysPressed[code] = false;
+    controller.release(code);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'keyup', code }));
+    }
+}
+
 document.addEventListener('keydown', (event) => {
     const hint = document.getElementById('key-hint');
     if (hint) { hint.style.opacity = '0'; setTimeout(() => hint.remove(), 2000); }
-
-    keysPressed[event.code] = true;
-    controller.press(event.code);
-
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'keydown', code: event.code }));
-    }
+    handlePress(event.code);
 });
 
 document.addEventListener('keyup', (event) => {
-    keysPressed[event.code] = false;
-    controller.release(event.code);
-
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'keyup', code: event.code }));
-    }
+    handleRelease(event.code);
 });
+
+// Connect Launchpad Mini if enabled in settings
+if (forceControls.launchpadEnabled) {
+    setupLaunchpad(controller, handlePress, handleRelease);
+}
 
 // Create circular texture
 const canvas = document.createElement('canvas');

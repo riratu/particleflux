@@ -118,10 +118,11 @@ function startIfNeeded(i) {
 // Build oneshot players for each BUTTON_MAP key (called after all sounds loaded)
 function initKeySounds() {
     const keys = Object.keys(BUTTON_MAP)
-    // Use all successfully loaded sounds for key oneshots
+    // Only use oneshot sounds for key triggers
     const loaded = []
     for (let i = 0; i < sounds.length; i++) {
-        if (sounds[i] && sounds[i].buffer && sounds[i].buffer.duration > 0) {
+        if (sounds[i] && sounds[i].buffer && sounds[i].buffer.duration > 0
+            && soundsFiles[i].startsWith('oneshots/')) {
             loaded.push(i)
         }
     }

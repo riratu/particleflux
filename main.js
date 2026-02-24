@@ -34,6 +34,8 @@ document.body.appendChild(renderer.domElement);
 
 let lastTime = performance.now();
 let frames = 0;
+let lowFpsSeconds = 0;
+let fpsReducedThisSession = false;
 const fpsDisplay = document.getElementById('fps');
 
 // NOTE: Removed duplicate `controls` object to avoid desync with physics.
@@ -809,6 +811,21 @@ function animate() {
     frames++;
     if (now >= lastTime + 1000) {
         fpsDisplay.textContent = `FPS: ${frames}`;
+        // Low-FPS watchdog: reduce particles once per session if FPS stays low
+        if (!fpsReducedThisSession && frames < 13) {
+            lowFpsSeconds++;
+            if (lowFpsSeconds >= 6) {
+                fpsReducedThisSession = true;
+                const newCount = Math.max(300, Math.round(forceControls.particleCount * 2 / 3));
+                console.warn(`FPS below 15 for ${lowFpsSeconds}s — reducing particles from ${forceControls.particleCount} to ${newCount}`);
+                forceBaseline.particleCount = newCount;
+                saveSettings();
+                location.reload();
+                return;
+            }
+        } else {
+            lowFpsSeconds = 0;
+        }
         frames = 0;
         lastTime = now;
     }

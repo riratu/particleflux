@@ -528,9 +528,17 @@ function handleRelease(code) {
     }
 }
 
+let uiHidden = false;
 document.addEventListener('keydown', (event) => {
     const hint = document.getElementById('key-hint');
     if (hint) { hint.style.opacity = '0'; setTimeout(() => hint.remove(), 2000); }
+    if (event.code === 'KeyH') {
+        uiHidden = !uiHidden;
+        const display = uiHidden ? 'none' : '';
+        document.getElementById('top-bar').style.display = display || 'flex';
+        document.getElementById('audio-panel').style.display = uiHidden ? 'none' : '';
+        return;
+    }
     handlePress(event.code);
 });
 

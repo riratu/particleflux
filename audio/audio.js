@@ -1,4 +1,4 @@
-import soundsFiles from '../sounds/soundsFiles.js';
+import soundsFiles from './soundsFiles.js';
 import { Tone } from '../audio.js';
 import { BUTTON_MAP } from '../controller.js';
 
@@ -33,7 +33,7 @@ let selection = {
 
 let lastUpdatedSliders = []
 
-let soundFileDir = "sounds/compressed/"
+let soundFileDir = "sounds_compressed/"
 
 // Audio Effects — all created lazily inside setupAudio()
 
@@ -115,10 +115,10 @@ function startIfNeeded(i) {
         disconnected.delete(i)
     }
 }
-// Build oneshot players for each BUTTON_MAP key (called after all sounds loaded)
+// Build oneshot players for each BUTTON_MAP key (called after all samples loaded)
 function initKeySounds() {
     const keys = Object.keys(BUTTON_MAP)
-    // Only use oneshot sounds for key triggers
+    // Only use oneshot samples for key triggers
     const loaded = []
     for (let i = 0; i < sounds.length; i++) {
         if (sounds[i] && sounds[i].buffer && sounds[i].buffer.duration > 0
@@ -219,7 +219,7 @@ export function setupAudio() {
         wet: 1,
     });
     // Convolution reverb from space_verb.mp3
-    convReverb = new Tone.Convolver({ url: '/sounds/space_verb.mp3', wet: 1 });
+    convReverb = new Tone.Convolver({ url: '/space_verb.mp3', wet: 1 });
     convReverb.connect(reverbMaster);
     convSend = new Tone.Volume(0);
     convSend.connect(convReverb);
@@ -486,10 +486,10 @@ export function setupAudio() {
             scheduleOneshot()
         }, delay)
     }
-    // Start scheduling after a short delay to let sounds load
+    // Start scheduling after a short delay to let samples load
     setTimeout(scheduleOneshot, 3000)
 
-    // Auto-trigger random scene every 15–30s once sounds are loaded
+    // Auto-trigger random scene every 15–30s once samples are loaded
     let autoSceneTimer = null
     function scheduleRandomScene() {
         const delay = 4000 + Math.random() * 5000
@@ -498,7 +498,7 @@ export function setupAudio() {
             scheduleRandomScene()
         }, delay)
     }
-    // Wait a bit for sounds to load, then start cycling
+    // Wait a bit for samples to load, then start cycling
     setTimeout(scheduleRandomScene, 5000)
 
     // Reverb amount slider

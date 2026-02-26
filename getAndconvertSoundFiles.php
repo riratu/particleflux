@@ -1,7 +1,7 @@
 <?php
 
-$source_folder = "sounds/main";
-$destination_folder = "sounds/compressed";
+$source_folder = "samples/masters";
+$destination_folder = "public/samples-compressed";
 
 // Recursively find all .wav and .mp3 files
 $iterator = new RecursiveIteratorIterator(
@@ -11,7 +11,7 @@ $iterator = new RecursiveIteratorIterator(
 
 $iterator->setMaxDepth(1);
 
-$jsFile = fopen("sounds/soundsFiles.js", "w");
+$jsFile = fopen("samples/soundsFiles.js", "w");
 fwrite($jsFile, "let soundsFiles = [\n");
 
 foreach ($iterator as $file) {

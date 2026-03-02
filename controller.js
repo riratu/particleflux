@@ -11,6 +11,7 @@ const PARAMS = {
   speedMultiplier:   { min: 0.01, max: 3.0,  default: 1.0 },
   zThrust:           { min: -3000, max: 3000, default: 0 },
   zFlow:             { min: -3000, max: 3000, default: 0 },
+  spaceAttraction:   { min: 0, max: 100, default: 0 },
   // Force matrix
   'RED-RED':     { min: -10, max: 10, default: 2 },
   'RED-GREEN':   { min: -10, max: 10, default: -0.7 },
@@ -76,6 +77,8 @@ const BUTTON_MAP = {
   // , . — Compound spatial effects
   Comma:  { name: 'terraform', offsets: { gravity: +600, maxRadius: +400, repulsionRange: +200, repulsionStrength: +3, 'RED-RED': +2, 'GREEN-GREEN': +2, 'BLUE-BLUE': +2, particleSize: +3, bloomStrength: +0.5, filterQ: -5, speedMultiplier: +0.4, cameraFov: +50 } },
   Period: { name: 'dissolve',  offsets: { gravity: -500, maxRadius: +600, repulsionStrength: +4, bloomStrength: -0.3, bloomRadius: +0.1, exposure: +0.6, reverbWet: +0.1, filterQ: -8, speedMultiplier: -0.3, cameraFov: +50 } },
+  Enter:  { name: 'z-flow',    offsets: { zFlow: +2000 } },
+  Space:  { name: 'attract',  offsets: { spaceAttraction: +50 } },
 
   // ü ö ä ¨ $ — Special keys (Swiss/German keyboard)
   BracketLeft:  { name: 'singularity', offsets: { gravity: +3000, repulsionRange: -120, bloomStrength: +2, exposure: +0.1, fogNear: +80, filterQ: +12, maxVol: +5, speedMultiplier: +1.0 } },

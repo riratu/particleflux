@@ -9,8 +9,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
-import { startAudioContext, isAudioStarted, initAudio, updateAudio, applyAudioParams } from './audio.js';
-import { setupAudio as setupMixer, setRandomAvScene, playKeyOneshot } from './audio/audio.js';
+import { startAudioContext, isAudioStarted, initAudio, updateAudio, applyAudioParams, setupAudio as setupMixer, setRandomAvScene, playKeyOneshot } from './audio/audio.js';
 import { MomentaryController } from './controller.js';
 import { setupLaunchpad } from './launchpad.js';
 import velocityShader from './shaders/velocity.glsl?raw';
@@ -693,7 +692,7 @@ function updatePhysicsGPU(deltaTime) {
     velocityVariable.material.uniforms['repulsionStrength'].value = controller.get('repulsionStrength');
     velocityVariable.material.uniforms['gravity'].value = controller.get('gravity');
     velocityVariable.material.uniforms['mouse'].value.set(mouseX, mouseY);
-    velocityVariable.material.uniforms['spaceAttraction'].value = keysPressed['Space'] ? 50 : 0;
+    velocityVariable.material.uniforms['spaceAttraction'].value = controller.get('spaceAttraction');
     velocityVariable.material.uniforms['speedMultiplier'].value = controller.get('speedMultiplier');
     velocityVariable.material.uniforms['zThrust'].value = controller.get('zThrust');
     velocityVariable.material.uniforms['zFlow'].value = controller.get('zFlow');

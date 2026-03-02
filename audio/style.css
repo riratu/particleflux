@@ -175,6 +175,7 @@ input[type="range"].mainSliders{
     height: 400px;
     position: absolute;
     border-radius: 10px;
+    color: white;
 }
 
 #randomMusicBtn {

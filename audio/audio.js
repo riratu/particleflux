@@ -39,8 +39,8 @@ export async function startAudioContext() {
         console.log('Starting Tone.js...');
         Tone = await import('tone');
         await Tone.start();
-        Tone.context.lookAhead = 1;
-        Tone.context.updateInterval = 0.2;
+        Tone.context.lookAhead = 0.1;
+        Tone.context.updateInterval = 0.1;
         console.log('Tone.js started, context state:', Tone.context.state);
         audioContextStarted = true;
     }
@@ -62,7 +62,15 @@ export function initAudio(redCount) {
             wet: 0.9,
             preDelay: 0.01
         });
-        particleReverb.toDestination();
+        const particleMaster = new Tone.Volume(0);
+        particleReverb.connect(particleMaster);
+        particleMaster.toDestination();
+
+        const particleSlider = document.getElementById("particle-volume");
+        if (particleSlider) {
+            particleMaster.volume.value = Number(particleSlider.value);
+            particleSlider.oninput = () => { particleMaster.volume.value = Number(particleSlider.value); };
+        }
 
         // Create audio players for each red particle
         for (let i = 0; i < redCount; i++) {
@@ -185,7 +193,7 @@ let selection = {
 
 let lastUpdatedSliders = []
 
-let soundFileDir = "sounds_compressed/"
+let soundFileDir = "samples-compressed/"
 
 // Audio Effects — all created lazily inside setupAudio()
 
@@ -281,8 +289,8 @@ function initKeySounds() {
     if (loaded.length === 0) return
 
     keySoundsMaster = new Tone.Volume(6)
-    const keySendConv = new Tone.Volume(-3)
-    const keySendAlgo = new Tone.Volume(-3)
+    const keySendConv = new Tone.Volume(-6)
+    const keySendAlgo = new Tone.Volume(-6)
     keySoundsMaster.connect(dryMaster)
     keySoundsMaster.connect(keySendConv)
     keySoundsMaster.connect(keySendAlgo)
@@ -299,9 +307,9 @@ function initKeySounds() {
     // Shared animated filter for all oneshots
     const sharedFilter = new Tone.Filter({
         type: 'bandpass',
-        frequency: 5000,
-        Q: 1,
-        rolloff: -24,
+        frequency: 2000,
+        Q: 0.5,
+        rolloff: -12,
     })
     sharedFilter.connect(keySoundsMaster)
     const filterAnim = { phase: 0, speed: 0.65 + Math.random() * 0.3 }
@@ -319,7 +327,7 @@ function initKeySounds() {
     setInterval(() => {
         filterAnim.phase += filterAnim.speed * 0.15
         const norm = (Math.sin(filterAnim.phase) + 1) / 2
-        sharedFilter.frequency.value = 800 * Math.pow(8000 / 800, norm)
+        sharedFilter.frequency.value = 400 * Math.pow(8000 / 400, norm)
     }, 150)
 
     keySoundsReady = true
@@ -359,7 +367,7 @@ export function setupAudio() {
     dryMaster = new Tone.Volume(0);
     dryMaster.connect(multiband.input);
 
-    reverbFx = new Tone.Reverb({ decay: 30, wet: 1, preDelay: 0.9 });
+    reverbFx = new Tone.Reverb({ decay: 15, wet: 1, preDelay: 0.9 });
     reverbFx.connect(algoMaster);
     algoSend = new Tone.Volume(0);
     algoSend.connect(highpass);

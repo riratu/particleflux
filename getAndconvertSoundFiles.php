@@ -11,7 +11,7 @@ $iterator = new RecursiveIteratorIterator(
 
 $iterator->setMaxDepth(1);
 
-$jsFile = fopen("samples/soundsFiles.js", "w");
+$jsFile = fopen("audio/soundsFiles.js", "w");
 fwrite($jsFile, "let soundsFiles = [\n");
 
 foreach ($iterator as $file) {

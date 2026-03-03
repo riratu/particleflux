@@ -1,6 +1,7 @@
 uniform float deltaTime;
 uniform float maxRadius;
 uniform float zFlow;
+uniform float speedMultiplier;
 
 void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -10,7 +11,7 @@ void main() {
 
     vec3 velocity = texture2D(textureVelocity, uv).xyz;
 
-    position += velocity * deltaTime;
+    position += velocity * deltaTime * speedMultiplier;
 
     if (zFlow != 0.0) {
         // When z-flow is active: clamp x,y to maxRadius, wrap z

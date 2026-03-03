@@ -434,13 +434,13 @@ velocityVariable.material.uniforms['mouse'] = { value: new THREE.Vector2() };
 velocityVariable.material.uniforms['spaceAttraction'] = { value: 0.0 };
 velocityVariable.material.uniforms['maxForce'] = { value: 300.0 };
 velocityVariable.material.uniforms['forceMatrix'] = { value: new THREE.Matrix3() };
-velocityVariable.material.uniforms['speedMultiplier'] = { value: forceControls.speedMultiplier };
 velocityVariable.material.uniforms['zThrust'] = { value: 0.0 };
 velocityVariable.material.uniforms['zFlow'] = { value: 0.0 };
 
 positionVariable.material.uniforms['deltaTime'] = { value: 0.0 };
 positionVariable.material.uniforms['maxRadius'] = { value: forceControls.maxRadius };
 positionVariable.material.uniforms['zFlow'] = { value: 0.0 };
+positionVariable.material.uniforms['speedMultiplier'] = { value: forceControls.speedMultiplier };
 
 const error = gpuCompute.init();
 if (error !== null) {
@@ -583,7 +583,9 @@ const redMaterial = new THREE.PointsMaterial({
     vertexColors: true,
     transparent: true,
     opacity: 0.9,
-    sizeAttenuation: true
+    sizeAttenuation: true,
+    alphaTest: 0.1,
+    depthWrite: false
 });
 
 function updateParticleSize() {
@@ -693,7 +695,6 @@ function updatePhysicsGPU(deltaTime) {
     velocityVariable.material.uniforms['gravity'].value = controller.get('gravity');
     velocityVariable.material.uniforms['mouse'].value.set(mouseX, mouseY);
     velocityVariable.material.uniforms['spaceAttraction'].value = controller.get('spaceAttraction');
-    velocityVariable.material.uniforms['speedMultiplier'].value = controller.get('speedMultiplier');
     velocityVariable.material.uniforms['zThrust'].value = controller.get('zThrust');
     velocityVariable.material.uniforms['zFlow'].value = controller.get('zFlow');
 
@@ -702,6 +703,7 @@ function updatePhysicsGPU(deltaTime) {
     positionVariable.material.uniforms['deltaTime'].value = deltaTime;
     positionVariable.material.uniforms['maxRadius'].value = controller.get('maxRadius');
     positionVariable.material.uniforms['zFlow'].value = controller.get('zFlow');
+    positionVariable.material.uniforms['speedMultiplier'].value = controller.get('speedMultiplier');
 
     // Compute on GPU
     gpuCompute.compute();

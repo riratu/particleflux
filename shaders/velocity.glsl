@@ -8,7 +8,6 @@ uniform float maxSpeed;
 uniform vec2 mouse;
 uniform float spaceAttraction;
 uniform float maxForce;
-uniform float speedMultiplier;
 uniform float zThrust;
 uniform float zFlow;
 
@@ -106,9 +105,6 @@ void main() {
     // Update velocity
     velocity += force;
     velocity *= damping;
-
-    // Apply speed multiplier for calmer movement
-    velocity *= speedMultiplier;
 
     // Clamp speed
     float speed = length(velocity);

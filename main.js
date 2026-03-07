@@ -155,7 +155,6 @@ const defaultForceControls = {
     maxRadius: 200.0,
     speedMultiplier: 1.0,
     zFlow: 0,
-    websocketEnabled: false,
     launchpadEnabled: false,
     'RED-RED': 2,
     'RED-GREEN': -0.7,
@@ -232,14 +231,6 @@ soundFolder.add(forceControls, 'filterQ', 0.5, 30).onChange(saveSettings).name('
 soundFolder.add(forceControls, 'reverbWet', 0, 1, 0.01).onChange(saveSettings).name('Reverb Wet');
 
 const networkFolder = gui.addFolder('Network');
-networkFolder.add(forceControls, 'websocketEnabled').onChange((enabled) => {
-    saveSettings();
-    if (enabled) {
-        connectWebSocket();
-    } else {
-        disconnectWebSocket();
-    }
-}).name('WebSocket Sync');
 networkFolder.add(forceControls, 'launchpadEnabled').onChange((enabled) => {
     saveSettings();
     if (enabled) {
@@ -508,8 +499,9 @@ function disconnectWebSocket() {
     }
 }
 
-// Connect WebSocket if enabled in settings
-if (forceControls.websocketEnabled) {
+// Auto-connect WebSocket on .local or localhost
+const host = location.hostname;
+if (host === 'localhost' || host.endsWith('.local')) {
     connectWebSocket();
 }
 

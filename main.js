@@ -465,7 +465,7 @@ function connectWebSocket() {
                 wsKeyTimers[data.code] = setTimeout(() => {
                     keysPressed[data.code] = false;
                     controller.release(data.code);
-                    delete wsKeyTimers[data.code];coolcool
+                    delete wsKeyTimers[data.code];
                 }, 25000);
             } else if (data.type === 'keyup') {
                 clearTimeout(wsKeyTimers[data.code]);

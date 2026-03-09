@@ -96,6 +96,65 @@ let midiOutput = null;
 let controllerRef = null;
 let lastLED = {};  // note → last sent velocity, for change-detection
 
+// Spam protection — tunables
+const SPAM_MAX_PRESSES  = 3;      // max presses per second before considered spam
+const SPAM_WINDOW_MS    = 10000;  // how long the rate must be sustained (ms)
+const LOCKOUT_MS        = 20000;  // how long inputs are ignored (ms)
+const FLASH_INTERVAL_MS = 250;    // lockout LED flash speed (ms)
+
+// Spam protection state
+const pressTimestamps = [];
+let spamStart = null;
+let lockedOut = false;
+let lockoutTimer = null;
+let flashInterval = null;
+
+function checkSpam() {
+  const now = Date.now();
+  while (pressTimestamps.length && pressTimestamps[0] < now - 1000) {
+    pressTimestamps.shift();
+  }
+  if (pressTimestamps.length > SPAM_MAX_PRESSES) {
+    if (!spamStart) spamStart = now;
+    if (now - spamStart >= SPAM_WINDOW_MS) {
+      triggerLockout();
+    }
+  } else {
+    spamStart = null;
+  }
+}
+
+function triggerLockout() {
+  if (lockedOut) return;
+  lockedOut = true;
+  spamStart = null;
+  pressTimestamps.length = 0;
+
+  if (controllerRef) {
+    for (const code of Object.values(PAD_MAP)) {
+      if (controllerRef.pressed.has(code)) {
+        controllerRef.release(code);
+      }
+    }
+  }
+
+  let flashOn = true;
+  flashInterval = setInterval(() => {
+    lastLED = {};
+    for (const noteStr of Object.keys(PAD_MAP)) {
+      setLED(parseInt(noteStr), flashOn ? COLORS.RED : COLORS.OFF);
+    }
+    flashOn = !flashOn;
+  }, FLASH_INTERVAL_MS);
+
+  lockoutTimer = setTimeout(() => {
+    lockedOut = false;
+    clearInterval(flashInterval);
+    flashInterval = null;
+    renderAllLEDs();
+  }, LOCKOUT_MS);
+}
+
 function setLED(note, velocity) {
   if (!midiOutput || lastLED[note] === velocity) return;
   lastLED[note] = velocity;
@@ -174,9 +233,13 @@ export function setupLaunchpad(controller, onPress, onRelease) {
         if (!code || !BUTTON_MAP[code]) return;
 
         if ((status & 0xF0) === 0x90 && velocity > 0) {
+          pressTimestamps.push(Date.now());
+          checkSpam();
+          if (lockedOut) return;
           onPress(code);
           setLED(note, colorForNote(note, true));
         } else {
+          if (lockedOut) return;
           onRelease(code);
           setLED(note, colorForNote(note, false));
         }
@@ -202,9 +265,13 @@ export function setupLaunchpad(controller, onPress, onRelease) {
             const code = PAD_MAP[note];
             if (!code || !BUTTON_MAP[code]) return;
             if ((status & 0xF0) === 0x90 && velocity > 0) {
+              pressTimestamps.push(Date.now());
+              checkSpam();
+              if (lockedOut) return;
               onPress(code);
               setLED(note, colorForNote(note, true));
             } else {
+              if (lockedOut) return;
               onRelease(code);
               setLED(note, colorForNote(note, false));
             }

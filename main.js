@@ -33,8 +33,6 @@ document.body.appendChild(renderer.domElement);
 
 let lastTime = performance.now();
 let frames = 0;
-let lowFpsSeconds = 0;
-let fpsReducedThisSession = false;
 const fpsDisplay = document.getElementById('fps');
 
 // NOTE: Removed duplicate `controls` object to avoid desync with physics.
@@ -208,6 +206,8 @@ generalFolder.add(forceControls, 'gravity', 0.01, 2000).onChange(saveSettings);
 generalFolder.add(forceControls, 'particleSize', 0.1, 3).onChange(() => { updateParticleSize(); saveSettings(); });
 generalFolder.add(forceControls, 'maxRadius', 1, 1000).onChange(saveSettings);
 generalFolder.add(forceControls, 'zFlow', 0, 5000).onChange(saveSettings).name('Z Flow');
+generalFolder.add(forceControls, 'vignetteOffset', 0.0, 3.0, 0.01).onChange(saveSettings).name('Vignette Offset');
+generalFolder.add(forceControls, 'vignetteDarkness', 0.0, 2.0, 0.01).onChange(saveSettings).name('Vignette Darkness');
 generalFolder.add(forceControls, 'particleCount', 100, 50000, 100).onChange(saveSettings).name('Particle Count');
 generalFolder.add({ reload: reloadParticles }, 'reload').name('Apply Particle count');
 generalFolder.open()
@@ -854,21 +854,6 @@ function animate() {
     frames++;
     if (now >= lastTime + 1000) {
         fpsDisplay.textContent = `FPS: ${frames}`;
-        // Low-FPS watchdog: reduce particles once per session if FPS stays low
-        if (!fpsReducedThisSession && frames < 13) {
-            lowFpsSeconds++;
-            if (lowFpsSeconds >= 6) {
-                fpsReducedThisSession = true;
-                const newCount = Math.max(300, Math.round(forceControls.particleCount * 2 / 3));
-                console.warn(`FPS below 15 for ${lowFpsSeconds}s — reducing particles from ${forceControls.particleCount} to ${newCount}`);
-                forceBaseline.particleCount = newCount;
-                saveSettings();
-                location.reload();
-                return;
-            }
-        } else {
-            lowFpsSeconds = 0;
-        }
         frames = 0;
         lastTime = now;
     }

@@ -29,8 +29,10 @@ const PARAMS = {
   fogNear:       { min: 1,     max: 2000, default: 50 },
   fogFar:        { min: 10,    max: 5000, default: 1000 },
   rotationSpeed: { min: -0.03, max: 0.03, default: 0.003 },
-  exposure:      { min: 0.1,   max: 3.0,  default: 1.0 },
-  cameraFov:     { min: 5,     max: 120,  default: 75 },
+  exposure:         { min: 0.1,   max: 3.0,  default: 1.0 },
+  cameraFov:        { min: 5,     max: 120,  default: 75 },
+  vignetteOffset:   { min: 0.0,   max: 3.0,  default: 1.0 },
+  vignetteDarkness: { min: 0.0,   max: 2.0,  default: 1.0 },
   // Audio
   filterQ:   { min: 0.5, max: 30, default: 15 },
   reverbWet: { min: 0,   max: 1,  default: 0.9 },

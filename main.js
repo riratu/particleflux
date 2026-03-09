@@ -156,6 +156,8 @@ const defaultForceControls = {
     speedMultiplier: 1.0,
     zFlow: 0,
     launchpadEnabled: false,
+    vignetteOffset: 1.0,
+    vignetteDarkness: 1.0,
     'RED-RED': 2,
     'RED-GREEN': -0.7,
     'RED-BLUE': 0.5,
@@ -289,7 +291,8 @@ const displayKeys = [
     'gravity', 'maxRadius', 'repulsionRange', 'repulsionStrength', 'speedMultiplier', 'zFlow',
     'particleSize',
     'RED-RED', 'RED-GREEN', 'RED-BLUE', 'GREEN-RED', 'GREEN-GREEN', 'GREEN-BLUE',
-    'BLUE-RED', 'BLUE-BLUE', 'BLUE-GREEN', 'filterQ', 'reverbWet'
+    'BLUE-RED', 'BLUE-BLUE', 'BLUE-GREEN', 'filterQ', 'reverbWet',
+    'vignetteOffset', 'vignetteDarkness'
 ];
 
 // const bokehFolder = gui.addFolder('Bokeh');
@@ -616,6 +619,37 @@ const bloomPass = new UnrealBloomPass(
 );
 composer.addPass(bloomPass);
 
+// Vignette post-processing
+const VignetteShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        offset:   { value: forceControls.vignetteOffset },
+        darkness: { value: forceControls.vignetteDarkness },
+    },
+    vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform float offset;
+        uniform float darkness;
+        varying vec2 vUv;
+        void main() {
+            vec4 texel = texture2D(tDiffuse, vUv);
+            float dist = length((vUv - 0.5) * 2.0);
+            float vignette = 1.0 - smoothstep(offset, offset + darkness, dist);
+            texel.rgb *= vignette;
+            gl_FragColor = texel;
+        }
+    `,
+};
+const vignettePass = new ShaderPass(VignetteShader);
+composer.addPass(vignettePass);
+
 // OutputPass for proper sRGB encoding after HDR bloom
 const outputPass = new OutputPass();
 composer.addPass(outputPass);
@@ -802,6 +836,8 @@ function animate() {
     scene.fog.near = controller.get('fogNear');
     scene.fog.far = controller.get('fogFar');
     renderer.toneMappingExposure = controller.get('exposure');
+    vignettePass.uniforms['offset'].value = controller.get('vignetteOffset');
+    vignettePass.uniforms['darkness'].value = controller.get('vignetteDarkness');
     scene.rotation.y += controller.get('rotationSpeed');
 
     // Apply audio params from controller

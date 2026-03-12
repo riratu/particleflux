@@ -224,6 +224,15 @@ function saveSettings() {
 // Update GUI
 const gui = new GUI();
 const generalFolder = gui.addFolder('General');
+const masterSpeedObj = { masterSpeed: 1.0 };
+let masterSpeedFromRemote = false;
+const masterSpeedCtrl = generalFolder.add(masterSpeedObj, 'masterSpeed', 0.01, 1.0).name('Master Speed (sync)').onChange(v => {
+    masterSpeed = v;
+    if (!masterSpeedFromRemote && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'masterSpeed', value: v }));
+    }
+    masterSpeedFromRemote = false;
+});
 generalFolder.add(forceControls, 'speedMultiplier', 0.01, 2.0).onChange(saveSettings).name('Speed Multiplier');
 generalFolder.add(forceControls, 'repulsionStrength', 0.1, 10).onChange(saveSettings);
 generalFolder.add(forceControls, 'repulsionRange', 1, 500).onChange(saveSettings);
@@ -466,6 +475,9 @@ if (error !== null) {
     console.error('GPUComputationRenderer error:', error);
 }
 
+// Master speed — synced across all devices via WebSocket
+let masterSpeed = 1.0;
+
 const keysPressed = {};
 const controller = new MomentaryController();
 controller.syncBaseline(forceBaseline);
@@ -485,7 +497,11 @@ function connectWebSocket() {
     ws.onmessage = (e) => {
         try {
             const data = JSON.parse(e.data);
-            if (data.type === 'keydown') {
+            if (data.type === 'masterSpeed') {
+                masterSpeed = data.value;
+                masterSpeedFromRemote = true;
+                masterSpeedCtrl.setValue(masterSpeed);
+            } else if (data.type === 'keydown') {
                 keysPressed[data.code] = true;
                 controller.press(data.code);
                 // Auto-release after 3s if keyup is lost
@@ -770,7 +786,7 @@ function updatePhysicsGPU(deltaTime) {
     positionVariable.material.uniforms['deltaTime'].value = deltaTime;
     positionVariable.material.uniforms['maxRadius'].value = controller.get('maxRadius');
     positionVariable.material.uniforms['zFlow'].value = controller.get('zFlow');
-    positionVariable.material.uniforms['speedMultiplier'].value = controller.get('speedMultiplier');
+    positionVariable.material.uniforms['speedMultiplier'].value = controller.get('speedMultiplier') * masterSpeed;
 
     // Compute on GPU
     gpuCompute.compute();

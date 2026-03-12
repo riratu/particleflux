@@ -53,6 +53,22 @@ export function isAudioStarted() {
     return audioContextStarted;
 }
 
+export async function stopAudio() {
+    if (Tone && audioContextStarted) {
+        await Tone.context.rawContext.suspend();
+        audioContextStarted = false;
+        console.log('Audio stopped');
+    }
+}
+
+export async function resumeAudio() {
+    if (Tone && !audioContextStarted) {
+        await Tone.context.rawContext.resume();
+        audioContextStarted = true;
+        console.log('Audio resumed');
+    }
+}
+
 export function initAudio(redCount) {
     if (!audioInitialized && audioContextStarted) {
         console.log('Initializing audio...');

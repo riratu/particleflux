@@ -9,7 +9,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
-import { startAudioContext, isAudioStarted, initAudio, updateAudio, applyAudioParams, setupAudio as setupMixer, setRandomAvScene, playKeyOneshot } from './audio/audio.js';
+import { startAudioContext, isAudioStarted, initAudio, updateAudio, applyAudioParams, setupAudio as setupMixer, setRandomAvScene, playKeyOneshot, stopAudio, resumeAudio } from './audio/audio.js';
 import { MomentaryController, PARAMS } from './controller.js';
 import { startHistory, stopHistory, recordFrame } from './paramHistory.js';
 import { setupLaunchpad } from './launchpad.js';
@@ -74,26 +74,44 @@ window.oncontextmenu = function () {
 }
 
 // Shared audio startup logic
+let audioInitDone = false;
+const startBtn = document.getElementById('start-audio-btn');
+const mixerBtn = document.getElementById('show-mixer-btn');
+
 async function doStartAudio() {
     if (isAudioStarted()) return;
-    await startAudioContext();
-    initAudio(redCount);
-    document.getElementById('helloBackground').classList.remove('hide');
-    setupMixer();
+    if (audioInitDone) {
+        await resumeAudio();
+    } else {
+        await startAudioContext();
+        initAudio(redCount);
+        document.getElementById('helloBackground').classList.remove('hide');
+        setupMixer();
+        audioInitDone = true;
+    }
     localStorage.setItem('audioAutoStart', 'true');
-    const btn = document.getElementById('start-audio-btn');
-    btn.textContent = 'Show Audio';
-    btn.classList.add('subtle');
-    btn.onclick = () => {
-        const panel = document.getElementById('audio-panel');
-        const visible = panel.classList.toggle('hide');
-        btn.textContent = visible ? 'Show Audio' : 'Hide Audio';
-    };
+    startBtn.textContent = 'Sound Off';
+    startBtn.onclick = handleStopAudio;
+    mixerBtn.style.display = '';
     console.log('Audio started');
 }
 
+function handleStopAudio() {
+    stopAudio();
+    localStorage.removeItem('audioAutoStart');
+    startBtn.textContent = 'Sound On';
+    startBtn.onclick = doStartAudio;
+    console.log('Audio stopped');
+}
+
+mixerBtn.addEventListener('click', () => {
+    const panel = document.getElementById('audio-panel');
+    const hidden = panel.classList.toggle('hide');
+    mixerBtn.textContent = hidden ? 'Mixer' : 'Hide Mixer';
+});
+
 // Start audio when user clicks the button
-document.getElementById('start-audio-btn').addEventListener('click', doStartAudio);
+startBtn.addEventListener('click', doStartAudio);
 
 // Auto-start audio if it was running last session
 if (localStorage.getItem('audioAutoStart') === 'true') {

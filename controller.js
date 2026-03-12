@@ -53,9 +53,9 @@ const BUTTON_MAP = {
   KeyO: { name: 'spin',     offsets: { rotationSpeed: +0.01 } },
   KeyP: { name: 'exposure', offsets: { exposure: +1.0 } },
 
-  // a-l (9): Force matrix shaping
+  // a-l (9): Force matrix shapin
   KeyA: { name: 'green-scatter', offsets: { 'GREEN-GREEN': -3 } },
-  KeyS: { name: 'warp',          offsets: { cameraFov: -55, zThrust: +2000, speedMultiplier: +1.5, bloomStrength: +0.5, exposure: +0.5 } },
+  KeyS: { name: 'warp',          offsets: { zThrust: +2000, speedMultiplier: +0.2, bloomStrength: +0.5, exposure: +0.5 } },
   KeyD: { name: 'cross-attract', offsets: { 'RED-GREEN': +10, 'RED-BLUE': +10, repulsionRange: +100 } },
   KeyF: { name: 'cross-repel',   offsets: { 'RED-GREEN': -20, 'RED-BLUE': -20 } },
   KeyG: { name: 'green-cluster', offsets: { 'GREEN-GREEN': +3 } },
@@ -73,7 +73,7 @@ const BUTTON_MAP = {
   KeyC: { name: 'resonant', offsets: { filterQ: +15,  rotationSpeed: 3500.01 } },
   KeyV: { name: 'smooth',   offsets: { filterQ: -8, reverbWet: +0.1, 'RED-GREEN': -7, 'RED-BLUE': -7, 'GREEN-RED': -20, 'BLUE-RED': -5,  'GREEN-GREEN': -3, speedMultiplier: -1.3 } },
   KeyB: { name: 'red-hunt',  offsets: { 'RED-GREEN': +4, 'RED-BLUE': +4, 'GREEN-RED': -3, 'BLUE-RED': -3 } },
-  KeyN: { name: 'vortex',   offsets: { reverbWet: -0.5, rotationSpeed: +0.025, cameraFov: -25, gravity: +1200, maxRadius: +900, bloomStrength: +0.8, speedMultiplier: -0.7, repulsionStrength: +8 } },
+  KeyN: { name: 'vortex',   offsets: { reverbWet: -0.5, rotationSpeed: +0.025, gravity: +1200, maxRadius: +900, bloomStrength: +0.8, speedMultiplier: -0.7, repulsionStrength: +8 } },
   KeyM: { name: 'quake',    offsets: { maxVol: +8, minVol: +8, cameraFov: +30, bloomStrength: +1, zThrust: -1500, gravity: +500 } },
 
   // , . — Compound spatial effects

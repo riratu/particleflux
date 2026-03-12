@@ -67,13 +67,13 @@ const BUTTON_MAP = {
     'BLUE-RED': +1, 'BLUE-GREEN': +1, 'BLUE-BLUE': +1,
   }},
 
-  // z-m (7): Sound shaping
+  // z-m (7): Sound shapingn
   KeyY: { name: 'bright',   offsets: { filterQ: -10, maxVol: +5, particleSize: +1, bloomStrength: +0.3, fogNear: -30, bloomRadius: +0.1, speedMultiplier: +0.3 } },
   KeyX: { name: 'dark',     offsets: { filterQ: +10, minVol: -10, zThrust: -2000 } },
   KeyC: { name: 'resonant', offsets: { filterQ: +15,  rotationSpeed: 3500.01 } },
-  KeyV: { name: 'smooth',   offsets: { filterQ: -8, reverbWet: +0.1, 'RED-GREEN': -7, 'RED-BLUE': -7, 'GREEN-RED': -20, 'BLUE-RED': -5,  'GREEN-GREEN': -3,  } },
+  KeyV: { name: 'smooth',   offsets: { filterQ: -8, reverbWet: +0.1, 'RED-GREEN': -7, 'RED-BLUE': -7, 'GREEN-RED': -20, 'BLUE-RED': -5,  'GREEN-GREEN': -3, speedMultiplier: -1.3 } },
   KeyB: { name: 'red-hunt',  offsets: { 'RED-GREEN': +4, 'RED-BLUE': +4, 'GREEN-RED': -3, 'BLUE-RED': -3 } },
-  KeyN: { name: 'vortex',   offsets: { reverbWet: -0.5, rotationSpeed: +0.025, cameraFov: -25, gravity: +1200, maxRadius: +900, bloomStrength: +0.8, speedMultiplier: -0.5, repulsionStrength: +8 } },
+  KeyN: { name: 'vortex',   offsets: { reverbWet: -0.5, rotationSpeed: +0.025, cameraFov: -25, gravity: +1200, maxRadius: +900, bloomStrength: +0.8, speedMultiplier: -0.7, repulsionStrength: +8 } },
   KeyM: { name: 'quake',    offsets: { maxVol: +8, minVol: +8, cameraFov: +30, bloomStrength: +1, zThrust: -1500, gravity: +500 } },
 
   // , . — Compound spatial effects
@@ -83,18 +83,18 @@ const BUTTON_MAP = {
   Space:  { name: 'attract',  offsets: { spaceAttraction: +50 } },
 
   // ü ö ä ¨ $ — Special keys (Swiss/German keyboard)
-  BracketLeft:  { name: 'singularity', offsets: { gravity: +3000, repulsionRange: -120, bloomStrength: +2, exposure: +0.1, fogNear: +80, filterQ: +12, maxVol: +5, speedMultiplier: +1.0 } },
-  Semicolon:    { name: 'tidal',       offsets: { 'RED-GREEN': +5, 'GREEN-BLUE': +5, 'BLUE-RED': +5, 'RED-BLUE': -5, 'GREEN-RED': -5, 'BLUE-GREEN': -5, repulsionStrength: +3, rotationSpeed: +0.015, bloomStrength: +0.6, reverbWet: +0.1, speedMultiplier: +0.5 } },
-  Quote:        { name: 'cascade',     offsets: { gravity: +800, repulsionStrength: +6, repulsionRange: +150, maxRadius: +300, speedMultiplier: +1.0, bloomStrength: +1.0, bloomRadius: +0.5, filterQ: -12, maxVol: +3, zThrust: +1500, cameraFov: +15 } },
+  BracketLeft:  { name: 'singularity', offsets: { gravity: +3000, repulsionRange: -120, bloomStrength: +2, exposure: +0.1, fogNear: +80, filterQ: +12, maxVol: +5, speedMultiplier: +0.2 } },
+  Semicolon:    { name: 'tidal',       offsets: { 'RED-GREEN': +5, 'GREEN-BLUE': +5, 'BLUE-RED': +5, 'RED-BLUE': -5, 'GREEN-RED': -5, 'BLUE-GREEN': -5, repulsionStrength: +3, rotationSpeed: +0.015, bloomStrength: +0.6, reverbWet: +0.1, speedMultiplier: +0.3 } },
+  Quote:        { name: 'cascade',     offsets: { gravity: +800, repulsionStrength: +6, repulsionRange: +150, maxRadius: +300, speedMultiplier: +0.1, bloomStrength: +1.0, bloomRadius: +0.5, filterQ: -12, maxVol: +3, zThrust: +1500, cameraFov: +15 } },
   BracketRight: { name: 'freeze',      offsets: { speedMultiplier: -0.8, gravity: +500, repulsionRange: -80, particleSize: -1, bloomStrength: +1.8, bloomRadius: +1.0, exposure: +0.8, fogNear: -30, filterQ: +8, reverbWet: +0.1, minVol: -10 } },
-  Backslash:    { name: 'hyperdrive',  offsets: { speedMultiplier: +2.0, zThrust: +2500, cameraFov: -50, gravity: -300, maxRadius: +1000, bloomStrength: +1.5, bloomRadius: +0.8, exposure: +1.0, fogNear: -40, filterQ: -15, maxVol: +8, rotationSpeed: +0.02 } },
+  Backslash:    { name: 'hyperdrive',  offsets: { speedMultiplier: +0.2, zThrust: +2500, cameraFov: -50, gravity: -300, maxRadius: +1000, bloomStrength: +1.5, bloomRadius: +0.8, exposure: +1.0, fogNear: -40, filterQ: -15, maxVol: +8, rotationSpeed: +0.02 } },
 
   // 0-9 (10): Compound effects (physics + sound + visual)
   Digit1: { name: 'explode',     offsets: { maxRadius: +1000, gravity: -200, repulsionStrength: +5, bloomStrength: +1 } },
   Digit2: { name: 'implode',     offsets: { maxRadius: -180, gravity: +1500, bloomStrength: +0.5 } },
   Digit3: { name: 'crystallize', offsets: { 'GREEN-GREEN': +3, 'BLUE-BLUE': +3, repulsionRange: -80, filterQ: +10 } },
   Digit4: { name: 'melt',        offsets: { gravity: -200, repulsionStrength: -2, reverbWet: +0.1} },
-  Digit5: { name: 'swarm',       offsets: { 'RED-GREEN': -5, 'GREEN-BLUE': -5, 'BLUE-RED': -5, 'RED-BLUE': -5, 'GREEN-RED': -5, 'BLUE-GREEN': +5, speedMultiplier: +0.5, maxRadius: +80, cameraFov: -20 } },
+  Digit5: { name: 'swarm',       offsets: { 'RED-GREEN': -5, 'GREEN-BLUE': -5, 'BLUE-RED': -5, 'RED-BLUE': -5, 'GREEN-RED': -5, 'BLUE-GREEN': +5, speedMultiplier: +0.1, maxRadius: +80, cameraFov: -20 } },
   Digit6: { name: 'nebula',      offsets: { maxRadius: +500, bloomStrength: +1, exposure: +0.5 } },
   Digit7: { name: 'pulse',       offsets: { gravity: +800, maxRadius: -100, bloomStrength: +0.8 } },
   Digit8: { name: 'void',        offsets: { gravity: +2000, maxRadius: -150, minVol: -20 } },

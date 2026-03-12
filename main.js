@@ -876,11 +876,60 @@ function animate() {
 }
 
 window.addEventListener('resize', () => {
+    if (p5pop && !p5pop.closed) return; // canvas is in popup, ignore main window resize
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     composer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// Pop-out canvas — moves the canvas element into a popup window (zero-copy)
+let p5pop = null;
+
+function popCanvas() {
+    // Already open — bring to front
+    if (p5pop && !p5pop.closed) {
+        p5pop.focus();
+        return;
+    }
+
+    const canvas = renderer.domElement;
+
+    p5pop = window.open('', 'VISUALS', 'left=0,top=0,width=800,height=600');
+    p5pop.document.write('<!DOCTYPE html><html><head><title>VISUALS</title><style>body{margin:0;overflow:hidden;background:#000;}</style></head><body></body></html>');
+    p5pop.document.close();
+
+    // Move canvas into popup
+    p5pop.document.body.appendChild(canvas);
+
+    // Resize renderer to fit the popup window
+    function resizeToPopup() {
+        const w = p5pop.innerWidth;
+        const h = p5pop.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+        composer.setSize(w, h);
+    }
+    resizeToPopup();
+    p5pop.addEventListener('resize', resizeToPopup);
+
+    // When popup closes, move canvas back
+    const tick = setInterval(() => {
+        if (p5pop.closed) {
+            clearInterval(tick);
+            document.body.appendChild(canvas);
+            p5pop = null;
+            // Resize back to main window
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+    }, 500);
+}
+
+document.getElementById('popstream-btn').addEventListener('click', popCanvas);
 
 // Fullscreen toggle with mobile support
 const fullscreenBtn = document.getElementById('fullscreen-btn');

@@ -10,7 +10,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import { startAudioContext, isAudioStarted, initAudio, updateAudio, applyAudioParams, setupAudio as setupMixer, setRandomAvScene, playKeyOneshot } from './audio/audio.js';
-import { MomentaryController } from './controller.js';
+import { MomentaryController, PARAMS } from './controller.js';
+import { startHistory, stopHistory, recordFrame } from './paramHistory.js';
 import { setupLaunchpad } from './launchpad.js';
 import velocityShader from './shaders/velocity.glsl?raw';
 import positionShader from './shaders/position.glsl?raw';
@@ -865,6 +866,7 @@ function animate() {
     });
 
     updatePhysicsGPU(deltaTime);
+    recordFrame();
     composer.render();
 
     frames++;
@@ -914,10 +916,27 @@ function popCanvas() {
     resizeToPopup();
     p5pop.addEventListener('resize', resizeToPopup);
 
+    // Enter key fullscreens the popup window
+    p5pop.addEventListener('keydown', (e) => {
+        if (e.code === 'Enter') {
+            e.preventDefault();
+            const el = p5pop.document.documentElement;
+            if (!p5pop.document.fullscreenElement) {
+                el.requestFullscreen?.() || el.webkitRequestFullscreen?.();
+            } else {
+                p5pop.document.exitFullscreen?.() || p5pop.document.webkitExitFullscreen?.();
+            }
+        }
+    });
+
+    // Show live parameter history charts in the main window
+    startHistory(controller, PARAMS);
+
     // When popup closes, move canvas back
     const tick = setInterval(() => {
         if (p5pop.closed) {
             clearInterval(tick);
+            stopHistory();
             document.body.appendChild(canvas);
             p5pop = null;
             // Resize back to main window

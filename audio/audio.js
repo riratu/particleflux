@@ -37,8 +37,11 @@ export function applyAudioParams(params) {
 export async function startAudioContext() {
     if (!audioContextStarted) {
         console.log('Starting Tone.js...');
-        Tone = await import('tone');
+        if (!Tone) Tone = await import('tone');
         await Tone.start();
+        if (Tone.context.state !== 'running') {
+            throw new Error('AudioContext blocked by browser');
+        }
         Tone.context.lookAhead = 0.1;
         Tone.context.updateInterval = 0.1;
         console.log('Tone.js started, context state:', Tone.context.state);

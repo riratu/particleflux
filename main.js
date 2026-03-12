@@ -73,24 +73,48 @@ window.oncontextmenu = function () {
     return false;
 }
 
-// Start audio only when user clicks the button
-document.getElementById('start-audio-btn').addEventListener('click', async () => {
-    if (!isAudioStarted()) {
-        await startAudioContext();
-        initAudio(redCount);
-        document.getElementById('helloBackground').classList.remove('hide');
-        setupMixer();
-        const btn = document.getElementById('start-audio-btn');
-        btn.textContent = 'Show Audio';
-        btn.classList.add('subtle');
-        btn.onclick = () => {
-            const panel = document.getElementById('audio-panel');
-            const visible = panel.classList.toggle('hide');
-            btn.textContent = visible ? 'Show Audio' : 'Hide Audio';
+// Shared audio startup logic
+async function doStartAudio() {
+    if (isAudioStarted()) return;
+    await startAudioContext();
+    initAudio(redCount);
+    document.getElementById('helloBackground').classList.remove('hide');
+    setupMixer();
+    localStorage.setItem('audioAutoStart', 'true');
+    const btn = document.getElementById('start-audio-btn');
+    btn.textContent = 'Show Audio';
+    btn.classList.add('subtle');
+    btn.onclick = () => {
+        const panel = document.getElementById('audio-panel');
+        const visible = panel.classList.toggle('hide');
+        btn.textContent = visible ? 'Show Audio' : 'Hide Audio';
+    };
+    console.log('Audio started');
+}
+
+// Start audio when user clicks the button
+document.getElementById('start-audio-btn').addEventListener('click', doStartAudio);
+
+// Auto-start audio if it was running last session
+if (localStorage.getItem('audioAutoStart') === 'true') {
+    // Check if browser allows autoplay without producing warnings
+    const allowed = navigator.getAutoplayPolicy
+        ? navigator.getAutoplayPolicy('audiocontext') === 'allowed'
+        : false;
+
+    if (allowed) {
+        doStartAudio().catch(() => {});
+    } else {
+        // Browser would block — start on first user interaction instead
+        const autoStart = () => {
+            doStartAudio();
+            document.removeEventListener('click', autoStart);
+            document.removeEventListener('keydown', autoStart);
         };
-        console.log('Audio started');
+        document.addEventListener('click', autoStart);
+        document.addEventListener('keydown', autoStart);
     }
-});
+}
 
 // Random music button
 document.getElementById('randomMusicBtn').addEventListener('click', () => {

@@ -502,9 +502,15 @@ function disconnectWebSocket() {
     }
 }
 
-// Auto-connect WebSocket on .local or localhost
+// Auto-connect WebSocket on local/internal networks
 const host = location.hostname;
-if (host === 'localhost' || host.endsWith('.local')) {
+if (
+    host === 'localhost' ||
+    host.endsWith('.local') ||
+    host.startsWith('10.') ||
+    host.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+) {
     connectWebSocket();
 }
 

@@ -41,6 +41,8 @@ const PAD_MAP = {
   49: 'KeyP',   // exposure
   50: 'Comma',  // terraform
   51: 'Period', // dissolve
+  52: 'Space',  // attract
+  53: 'Enter',  // z-flow
 
   // Row 4: Force matrix shaping
   64: 'KeyA',  // green-scatter
@@ -72,14 +74,14 @@ for (const [note, code] of Object.entries(PAD_MAP)) {
 // Bits 0-1: green (0-3), Bits 4-5: red (0-3)
 const COLORS = {
   OFF:          0,
-  RED_DIM:      16,  // low red
-  RED:          48,  // full red
-  GREEN_DIM:    1,   // low green
-  GREEN:        3,   // full green
+  RED_DIM:      1,   // low red
+  RED:          3,   // full red
+  GREEN_DIM:    16,  // low green
+  GREEN:        48,  // full green
   AMBER_DIM:    17,  // low red + low green
   AMBER:        51,  // full red + full green
-  ORANGE_DIM:   33,  // med red + low green
-  ORANGE:       50,  // full red + med green
+  ORANGE_DIM:   18,  // med red + low green
+  ORANGE:       35,  // full red + med green
 };
 
 // Color theme per Launchpad row
@@ -98,8 +100,8 @@ let lastLED = {};  // note → last sent velocity, for change-detection
 
 // Spam protection — tunables
 const SPAM_MAX_PRESSES  = 3;      // max presses per second before considered spam
-const SPAM_WINDOW_MS    = 10000;  // how long the rate must be sustained (ms)
-const LOCKOUT_MS        = 20000;  // how long inputs are ignored (ms)
+const SPAM_WINDOW_MS    = 3000;  // how long the rate must be sustained (ms)
+const LOCKOUT_MS        = 10000;  // how long inputs are ignored (ms)
 const FLASH_INTERVAL_MS = 250;    // lockout LED flash speed (ms)
 
 // Spam protection state
@@ -158,7 +160,11 @@ function triggerLockout() {
 function setLED(note, velocity) {
   if (!midiOutput || lastLED[note] === velocity) return;
   lastLED[note] = velocity;
-  midiOutput.send([0x90, note, velocity]);
+  if (velocity === 0) {
+    midiOutput.send([0x80, note, 0]);
+  } else {
+    midiOutput.send([0x90, note, velocity]);
+  }
 }
 
 function colorForNote(note, active) {
@@ -183,7 +189,7 @@ function renderAllLEDs() {
 
 // Sync LED state with controller.pressed (picks up keyboard + websocket presses)
 function syncLEDs() {
-  if (!controllerRef || !midiOutput) return;
+  if (!controllerRef || !midiOutput || lockedOut) return;
   for (const [noteStr, code] of Object.entries(PAD_MAP)) {
     const note = parseInt(noteStr);
     const active = controllerRef.pressed.has(code);

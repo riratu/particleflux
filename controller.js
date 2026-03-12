@@ -79,7 +79,7 @@ const BUTTON_MAP = {
   // , . — Compound spatial effects
   Comma:  { name: 'terraform', offsets: { gravity: +600, maxRadius: +400, repulsionRange: +200, repulsionStrength: +3, 'RED-RED': +2, 'GREEN-GREEN': +2, 'BLUE-BLUE': +2, particleSize: +3, bloomStrength: +0.5, filterQ: -5, speedMultiplier: +0.4, cameraFov: +50 } },
   Period: { name: 'dissolve',  offsets: { gravity: -500, maxRadius: +600, repulsionStrength: +4, bloomStrength: -0.3, bloomRadius: +0.1, exposure: +0.6, reverbWet: +0.1, filterQ: -8, speedMultiplier: -0.3, cameraFov: +50 } },
-  Enter:  { name: 'z-flow',    offsets: { zFlow: +2000 } },
+  Backspace: { name: 'z-flow',    offsets: { zFlow: +2000 } },
   Space:  { name: 'attract',  offsets: { spaceAttraction: +50 } },
 
   // ü ö ä ¨ $ — Special keys (Swiss/German keyboard)

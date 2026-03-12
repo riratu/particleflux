@@ -267,7 +267,7 @@ function reloadParticles() {
 
 gui.add({ reset: resetToDefaults }, 'reset').name('Reset to Defaults');
 
-gui.close();
+gui.open();
 
 // Wrap all GUI onChange callbacks to keep forceBaseline in sync.
 // gui.updateDisplay() does NOT trigger onChange, so this only fires on real user interaction.
@@ -533,14 +533,24 @@ function handleRelease(code) {
 }
 
 let uiHidden = false;
+function setUiHidden(hidden) {
+    uiHidden = hidden;
+    document.getElementById('top-bar').style.display = hidden ? 'none' : 'flex';
+    document.getElementById('audio-panel').style.display = hidden ? 'none' : '';
+    document.querySelector('.dg.ac').style.display = hidden ? 'none' : '';
+}
+function toggleUi() { setUiHidden(!uiHidden); }
+
 document.addEventListener('keydown', (event) => {
     const hint = document.getElementById('key-hint');
     if (hint) { hint.style.opacity = '0'; setTimeout(() => hint.remove(), 2000); }
+    if (event.code === 'Enter') {
+        event.preventDefault();
+        toggleFullscreen();
+        return;
+    }
     if (event.code === 'KeyH') {
-        uiHidden = !uiHidden;
-        const display = uiHidden ? 'none' : '';
-        document.getElementById('top-bar').style.display = display || 'flex';
-        document.getElementById('audio-panel').style.display = uiHidden ? 'none' : '';
+        toggleUi();
         return;
     }
     handlePress(event.code);
@@ -910,6 +920,7 @@ function updateFullscreenIcon() {
     const fs = isFullscreen();
     fsEnter.style.display = fs ? 'none' : 'block';
     fsExit.style.display = fs ? 'block' : 'none';
+    setUiHidden(fs);
 }
 
 fullscreenBtn.addEventListener('click', toggleFullscreen);

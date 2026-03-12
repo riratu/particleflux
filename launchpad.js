@@ -42,7 +42,7 @@ const PAD_MAP = {
   50: 'Comma',  // terraform
   51: 'Period', // dissolve
   52: 'Space',  // attract
-  53: 'Enter',  // z-flow
+  53: 'Backspace',  // z-flow
 
   // Row 4: Force matrix shaping
   64: 'KeyA',  // green-scatter

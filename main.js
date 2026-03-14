@@ -622,6 +622,8 @@ document.addEventListener('keyup', (event) => {
 // Connect Launchpad Mini if enabled in settings
 if (forceControls.launchpadEnabled) {
     setupLaunchpad(controller, handlePress, handleRelease);
+} else {
+    console.warn('Launchpad: MIDI disabled — enable in Network → Launchpad MIDI');
 }
 
 // Create circular texture

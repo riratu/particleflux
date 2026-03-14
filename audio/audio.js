@@ -350,7 +350,7 @@ function initKeySounds() {
     }, 150)
 
     keySoundsReady = true
-    console.log('Key → Sound mapping:', Object.entries(keySoundNames).map(([k, v]) => `${BUTTON_MAP[k].name} → ${v}`).join(', '))
+    console.log(`Key → Sound: ${Object.keys(keySoundNames).length} keys mapped`)
 }
 
 export function playKeyOneshot(code) {

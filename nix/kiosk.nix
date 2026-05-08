@@ -16,13 +16,10 @@ let
   '';
 
 in {
-  imports = [ ./hardware-configuration.nix ];
-
-  # ── Boot (GRUB / BIOS Legacy) ──────────────────────────────
-  boot.loader.grub.enable = true;
-  boot.loader.grub.device = "/dev/sda";
-  boot.loader.grub.useOSProber = false;
-  boot.kernelParams = [ "acpi=strict" ];  # HP EliteBook ACPI workaround
+  imports = [
+    ./hardware-configuration.nix
+    ./boot-configuration.nix
+  ];
 
   # ── Hostname (overridden at boot from /etc/device-id) ──────
   networking.hostName = "partikel";

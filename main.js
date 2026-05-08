@@ -110,6 +110,10 @@ mixerBtn.addEventListener('click', () => {
     mixerBtn.textContent = hidden ? 'Mixer' : 'Hide Mixer';
 });
 
+document.getElementById('show-audio-btn').addEventListener('click', () => {
+    document.getElementById('audio-panel').classList.toggle('hide');
+});
+
 // Start audio when user clicks the button
 startBtn.addEventListener('click', doStartAudio);
 
@@ -260,7 +264,7 @@ generalFolder.add(forceControls, 'maxRadius', 1, 1000).onChange(saveSettings);
 generalFolder.add(forceControls, 'zFlow', 0, 5000).onChange(saveSettings).name('Z Flow');
 generalFolder.add(forceControls, 'vignetteOffset', 0.0, 3.0, 0.01).onChange(saveSettings).name('Vignette Offset');
 generalFolder.add(forceControls, 'vignetteDarkness', 0.0, 2.0, 0.01).onChange(saveSettings).name('Vignette Darkness');
-generalFolder.add(forceControls, 'particleCount', 100, 50000, 100).onChange(saveSettings).name('Particle Count');
+generalFolder.add(forceControls, 'particleCount', 100, 5000, 100).onChange(saveSettings).name('Particle Count');
 generalFolder.add({ reload: reloadParticles }, 'reload').name('Apply Particle count');
 generalFolder.open()
 
@@ -591,14 +595,11 @@ function handleRelease(code) {
     }
 }
 
-let uiHidden = false;
-function setUiHidden(hidden) {
-    uiHidden = hidden;
-    document.getElementById('top-bar').style.display = hidden ? 'none' : 'flex';
-    document.getElementById('audio-panel').style.display = hidden ? 'none' : '';
-    document.querySelector('.dg.ac').style.display = hidden ? 'none' : '';
+function hideUi() {
+    document.getElementById('top-bar').style.display = 'none';
+    document.getElementById('audio-panel').style.display = 'none';
+    if (gui.domElement.style.display !== 'none') GUI.toggleHide();
 }
-function toggleUi() { setUiHidden(!uiHidden); }
 
 document.addEventListener('keydown', (event) => {
     const hint = document.getElementById('key-hint');
@@ -609,7 +610,11 @@ document.addEventListener('keydown', (event) => {
         return;
     }
     if (event.code === 'KeyH') {
-        toggleUi();
+        // dat.gui handles its own H toggle; sync the rest
+        document.getElementById('top-bar').style.display =
+            document.getElementById('top-bar').style.display === 'none' ? 'flex' : 'none';
+        document.getElementById('audio-panel').style.display =
+            document.getElementById('audio-panel').style.display === 'none' ? '' : 'none';
         return;
     }
     handlePress(event.code);
@@ -1048,7 +1053,7 @@ function updateFullscreenIcon() {
     const fs = isFullscreen();
     fsEnter.style.display = fs ? 'none' : 'block';
     fsExit.style.display = fs ? 'block' : 'none';
-    setUiHidden(fs);
+    if (fs) hideUi();
 }
 
 fullscreenBtn.addEventListener('click', toggleFullscreen);

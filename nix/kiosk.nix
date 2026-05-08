@@ -1,0 +1,192 @@
+{ config, lib, pkgs, ... }:
+
+let
+  serverUrl = "http://mainframe.local:5555";
+  kioskResetMinutes = 15;
+
+  kioskLauncher = pkgs.writeShellScript "kiosk-launcher" ''
+    DEVICE_ID=$(cat /etc/device-id 2>/dev/null || echo 0)
+    exec ${pkgs.coreutils}/bin/timeout ${toString (kioskResetMinutes * 60)} \
+      ${pkgs.firefox}/bin/firefox --kiosk "${serverUrl}/?deviceId=$DEVICE_ID"
+  '';
+
+  hostnameScript = pkgs.writeShellScript "set-particle-hostname" ''
+    ID=$(cat /etc/device-id 2>/dev/null || echo 0)
+    ${pkgs.systemd}/bin/hostnamectl set-hostname "partikel-$ID"
+  '';
+
+in {
+  imports = [ ./hardware-configuration.nix ];
+
+  # ── Boot (GRUB / BIOS Legacy) ──────────────────────────────
+  boot.loader.grub.enable = true;
+  boot.loader.grub.device = "/dev/sda";
+  boot.loader.grub.useOSProber = false;
+  boot.kernelParams = [ "acpi=strict" ];  # HP EliteBook ACPI workaround
+
+  # ── Hostname (overridden at boot from /etc/device-id) ──────
+  networking.hostName = "partikel";
+
+  systemd.services.particle-hostname = {
+    description = "Set hostname from /etc/device-id";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "cage-tty1.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = hostnameScript;
+      RemainAfterExit = true;
+    };
+  };
+
+  # ── Network ────────────────────────────────────────────────
+  networking.networkmanager.enable = true;
+  networking.networkmanager.ensureProfiles.environmentFiles = [
+    "/etc/nixos/wifi.env"
+  ];
+  networking.networkmanager.ensureProfiles.profiles.eiienet = {
+    connection = {
+      id = "eiienet";
+      type = "wifi";
+      autoconnect = "true";
+    };
+    wifi = {
+      ssid = "eiienet";
+      mode = "infrastructure";
+    };
+    wifi-security = {
+      key-mgmt = "wpa-psk";
+      psk = "$WIFI_PSK_EIIENET";
+    };
+  };
+
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    publish = {
+      enable = true;
+      addresses = true;
+      domain = true;
+    };
+  };
+
+  # ── Firmware ───────────────────────────────────────────────
+  hardware.enableAllFirmware = true;
+  nixpkgs.config.allowUnfree = true;
+
+  # ── Locale / time / keyboard ───────────────────────────────
+  time.timeZone = "Europe/Zurich";
+  i18n.defaultLocale = "de_CH.UTF-8";
+  console.keyMap = "sg";
+  services.xserver.xkb = {
+    layout = "ch";
+    variant = "de";
+  };
+
+  # ── Users ──────────────────────────────────────────────────
+  users.users.eiie = {
+    isNormalUser = true;
+    extraGroups = [ "wheel" "networkmanager" ];
+    hashedPasswordFile = "/etc/nixos/eiie-password";
+    openssh.authorizedKeys.keys = [
+      # "ssh-ed25519 AAAA... eiie@workstation"
+    ];
+  };
+
+  users.users.kiosk = {
+    isNormalUser = true;
+    extraGroups = [ "video" "audio" "networkmanager" ];
+    hashedPassword = "!";
+  };
+
+  # ── System packages ───────────────────────────────────────
+  environment.systemPackages = with pkgs; [
+    vim
+    git
+    htop
+  ];
+
+  # ── SSH ────────────────────────────────────────────────────
+  services.openssh.enable = true;
+
+  # ── Desktop (GNOME for testing / diagnostics) ───────────────
+  # To switch back to kiosk: replace this block with services.cage
+  services.xserver.enable = true;
+  services.xserver.displayManager.gdm.enable = true;
+  services.desktopManager.gnome.enable = true;
+
+  # ── Cage (Wayland kiosk compositor) — disabled for testing ─
+  # services.cage = {
+  #   enable = true;
+  #   user = "kiosk";
+  #   program = "${kioskLauncher}";
+  #   environment = {
+  #     MOZ_ENABLE_WAYLAND = "1";
+  #     MOZ_WEBRENDER = "1";
+  #   };
+  # };
+
+  # ── Firefox policies ──────────────────────────────────────
+  programs.firefox = {
+    enable = true;
+    policies = {
+      DisableProfileImportingOnFirstRun = true;
+      DontCheckDefaultBrowser = true;
+      DisableDeveloperTools = true;
+      DisableFirefoxUpdates = true;
+      DisableFormHistory = true;
+      DisablePocket = true;
+      DisableTelemetry = true;
+      BlockAboutConfig = true;
+      BlockAboutProfiles = true;
+      BlockAboutSupport = true;
+      OverrideFirstRunPage = "";
+      OverridePostUpdatePage = "";
+      Preferences = {
+        "browser.shell.checkDefaultBrowser" = false;
+        "browser.startup.homepage_override.mstone" = "ignore";
+        "datareporting.policy.dataSubmissionEnabled" = false;
+        "webgl.force-enabled" = true;
+        "gfx.webrender.all" = true;
+        "media.autoplay.default" = 0;
+        "browser.sessionstore.resume_from_crash" = false;
+        "extensions.pocket.enabled" = false;
+        "reader.parse-on-load.enabled" = false;
+      };
+    };
+  };
+
+  # ── GPU / Graphics ────────────────────────────────────────
+  hardware.graphics.enable = true;
+
+  # ── Audio (PipeWire) ──────────────────────────────────────
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    pulse.enable = true;
+  };
+  security.rtkit.enable = true;
+
+  # ── Prevent sleep / suspend ───────────────────────────────
+  services.logind = {
+    lidSwitch = "ignore";
+    lidSwitchDocked = "ignore";
+    lidSwitchExternalPower = "ignore";
+    extraConfig = ''
+      IdleAction=ignore
+      HandlePowerKey=ignore
+      HandleSuspendKey=ignore
+    '';
+  };
+  systemd.targets.sleep.enable = false;
+  systemd.targets.suspend.enable = false;
+  systemd.targets.hibernate.enable = false;
+  systemd.targets.hybrid-sleep.enable = false;
+
+  # ── Watchdog: restart cage if it crashes (disabled with GNOME) ─
+  # systemd.services.cage-tty1.serviceConfig = {
+  #   Restart = "always";
+  #   RestartSec = 3;
+  # };
+
+  system.stateVersion = "24.11";
+}

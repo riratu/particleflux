@@ -173,6 +173,9 @@ BOOTEOF
       echo ">> Fetching flake.nix ..."
       curl -f -o /mnt/etc/nixos/flake.nix "$PXE_SERVER/configs/flake.nix"
 
+      echo ">> Fetching authorized-keys ..."
+      curl -f -o /mnt/etc/nixos/authorized-keys "$PXE_SERVER/configs/authorized-keys"
+
       echo ">> Fetching secrets ..."
       curl -f -o /mnt/etc/nixos/wifi.env "$PXE_SERVER/secrets/wifi.env"
       chmod 600 /mnt/etc/nixos/wifi.env

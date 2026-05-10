@@ -18,8 +18,11 @@ let
 in {
   imports = [
     ./hardware-configuration.nix
-    ./boot-configuration.nix
   ];
+
+  # ── Bootloader (GRUB, BIOS) ─────────────────────────────────
+  boot.loader.grub.enable = true;
+  boot.loader.grub.device = "/dev/sda";
 
   # ── Hostname (overridden at boot from /etc/device-id) ──────
   networking.hostName = "partikel";
@@ -83,10 +86,12 @@ in {
   users.users.eiie = {
     isNormalUser = true;
     extraGroups = [ "wheel" "networkmanager" ];
-    hashedPasswordFile = "/etc/nixos/eiie-password";
-    openssh.authorizedKeys.keys = [
-      # "ssh-ed25519 AAAA... eiie@workstation"
-    ];
+    password = "";
+    openssh.authorizedKeys.keys =
+      let
+        content = builtins.readFile ./authorized-keys;
+        lines = lib.splitString "\n" content;
+      in builtins.filter (line: line != "" && builtins.substring 0 1 line != "#") lines;
   };
 
   users.users.kiosk = {
@@ -107,20 +112,24 @@ in {
 
   # ── Desktop (GNOME for testing / diagnostics) ───────────────
   # To switch back to kiosk: replace this block with services.cage
-  services.xserver.enable = true;
-  services.xserver.displayManager.gdm.enable = true;
-  services.desktopManager.gnome.enable = true;
+#  services.xserver.enable = true;
+#  services.xserver.displayManager.gdm.enable = true;
+#  services.desktopManager.gnome.enable = true;
+#  services.xserver.desktopManager.gnome.extraGSettingsOverrides = ''
+#    [org.gnome.desktop.input-sources]
+#    sources=[('xkb', 'ch+de')]
+#  '';
 
   # ── Cage (Wayland kiosk compositor) — disabled for testing ─
-  # services.cage = {
-  #   enable = true;
-  #   user = "kiosk";
-  #   program = "${kioskLauncher}";
-  #   environment = {
-  #     MOZ_ENABLE_WAYLAND = "1";
-  #     MOZ_WEBRENDER = "1";
-  #   };
-  # };
+   services.cage = {
+     enable = true;
+     user = "kiosk";
+     program = "${kioskLauncher}";
+     environment = {
+       MOZ_ENABLE_WAYLAND = "1";
+       MOZ_WEBRENDER = "1";
+     };
+   };
 
   # ── Firefox policies ──────────────────────────────────────
   programs.firefox = {
@@ -128,7 +137,7 @@ in {
     policies = {
       DisableProfileImportingOnFirstRun = true;
       DontCheckDefaultBrowser = true;
-      DisableDeveloperTools = true;
+#      DisableDeveloperTools = true;
       DisableFirefoxUpdates = true;
       DisableFormHistory = true;
       DisablePocket = true;
@@ -165,25 +174,25 @@ in {
 
   # ── Prevent sleep / suspend ───────────────────────────────
   services.logind = {
-    lidSwitch = "ignore";
-    lidSwitchDocked = "ignore";
-    lidSwitchExternalPower = "ignore";
-    extraConfig = ''
-      IdleAction=ignore
-      HandlePowerKey=ignore
-      HandleSuspendKey=ignore
-    '';
+    #lidSwitch = "ignore";
+    #lidSwitchDocked = "ignore";
+    #lidSwitchExternalPower = "ignore";
+    settings.Login = {
+      IdleAction = "ignore";
+      HandlePowerKey = "ignore";
+      HandleSuspendKey = "ignore";
+    };
   };
   systemd.targets.sleep.enable = false;
   systemd.targets.suspend.enable = false;
   systemd.targets.hibernate.enable = false;
   systemd.targets.hybrid-sleep.enable = false;
 
-  # ── Watchdog: restart cage if it crashes (disabled with GNOME) ─
-  # systemd.services.cage-tty1.serviceConfig = {
-  #   Restart = "always";
-  #   RestartSec = 3;
-  # };
+#  ── Watchdog: restart cage if it crashes (disabled with GNOME) ─
+   systemd.services.cage-tty1.serviceConfig = {
+     Restart = "always";
+     RestartSec = 3;
+   };
 
   system.stateVersion = "24.11";
 }

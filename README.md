@@ -1,6 +1,39 @@
-# Partikelflux — Kiosk Deployment
+# Partikelflux
 
-## Overview
+An interactive WebGL particle simulation with a live audio engine, designed as a performative installation. Thousands of particles (three types: RED, GREEN, BLUE) interact physically on the GPU while their velocities drive sound parameters in real-time. The simulation is controlled live via keyboard or a Launchpad MIDI controller.
+
+**Tech stack:** Three.js (WebGL + post-processing), GPUComputationRenderer (GLSL particle physics), Tone.js (audio engine), Vite, Web MIDI API.
+
+```
+Keyboard / Launchpad / WebSocket
+        │
+        ▼
+  MomentaryController
+   - additive offsets per key
+   - lerp interpolation per frame
+        │
+   ┌────┴─────┬──────────┐
+   ▼          ▼          ▼
+GPU Shaders  Three.js   Audio Engine
+(velocity +  (Bloom,    (Tone.js noise +
+ position)   Vignette)   music mixer)
+```
+
+Multiple devices can control the simulation simultaneously via WebSocket sync.
+
+## Development
+
+```bash
+npm install
+npm run dev      # Vite dev server on port 5555
+npm run build    # Production build to dist/
+```
+
+---
+
+## Kiosk Deployment
+
+### Overview
 
 PXE-based unattended install for 20+ kiosk laptops. One mainframe machine runs the Vite dev server and PXE boot server. Kiosk laptops network-boot, auto-install NixOS, and connect to the mainframe.
 
@@ -9,40 +42,46 @@ mainframe (NixOS)
   ├── Vite dev server        :5555
   ├── pixiecore PXE server   (DHCP proxy + TFTP + HTTP)
   └── nginx config server    :8123
-        ├── /configs/        kiosk.nix, flake.nix
+        ├── /configs/        kiosk.nix, flake.nix, authorized-keys
         └── /secrets/        wifi.env, eiie-password
 
 kiosk laptops
   └── PXE boot → auto-install → reboot → Firefox kiosk → mainframe.local:5555
 ```
 
+### Secrets (not committed to git)
+
+Create these files on your dev laptop and put them in the `nix/kiosk/` folder:
+
+- `wifi.env` — contains `WIFI_PSK_EIIENET=your-wifi-password`, used by NetworkManager on kiosks
+- `eiie-password` — hashed password (`mkpasswd -m sha-512 'pw'`), used for the eiie user login
+- `~/.ssh/eiieinstallations` + `eiieinstallations.pub` — SSH keypair for deploy.sh (mainframe bire-dings-bumsonly)
+
+On the installed machines these end up at `/etc/nixos/wifi.env` and `/etc/nixos/eiie-password`.
+
 ## 1. Install NixOS on the Mainframe
 
 Boot the NixOS installer ISO on the mainframe laptop, then:
 
 ```bash
-# Connect to the internet
-sudo systemctl start wpa_supplicant
-# or plug in ethernet
+# On the mainframe (NixOS installer), get the IP
+ip a
 
-# Clone the repo
-git clone <repo-url> /tmp/partikelflux
-cd /tmp/partikelflux/nix
+# From your dev laptop, copy the repo and secrets into nix/
+tar cf - -C /path/to/parent partikelflux | ssh nixos@<installer-ip> 'tar xf - -C /tmp/'
 
-# Run the installer (auto-detects disk + BIOS/EFI)
-export WIFI_PSK_EIIENET="your-wifi-password"
-export EIIE_HASHED_PW="$(mkpasswd -m sha-512 'your-password')"
-./install.sh
+# On the mainframe, partition + install
+cd /tmp/partikelflux/nix/kiosk
+./install.sh    # auto-detects disk, partitions with GRUB, copies secrets to /mnt/etc/nixos/
 ```
 
-After install, replace the generated config with the mainframe config:
+After reboot the repo is at `/home/eiie/partikelflux` (copied by install.sh). Switch to the mainframe config:
 
 ```bash
-sudo cp /tmp/partikelflux/nix/mainframe.nix /mnt/etc/nixos/configuration.nix
-sudo cp /tmp/partikelflux/nix/flake.nix /mnt/etc/nixos/
+passwd eiie
+nixos-generate-config --show-hardware-config > /home/eiie/partikelflux/nix/mainframe/hardware-configuration.nix
+nixos-rebuild switch --flake /home/eiie/partikelflux/nix/mainframe#mainframe
 ```
-
-Reboot into the installed system.
 
 ## 2. Configure the Mainframe
 
@@ -50,11 +89,25 @@ Reboot into the installed system.
 # Find LAN IP
 ip addr
 
-# Edit the shared config — set serverIp to your LAN IP
-vim /path/to/partikelflux/nix/config.nix
+# Edit the mainframe config — set serverIp to your LAN IP
+vim /path/to/partikelflux/nix/mainframe/config.nix
+```
 
-# Rebuild
-sudo nixos-rebuild switch --flake /path/to/partikelflux/nix#mainframe
+Copy the SSH deploy key and config from your dev laptop:
+
+```bash
+scp ~/.ssh/eiieinstallations ~/.ssh/eiieinstallations.pub eiie@mainframe.local:~/.ssh/
+ssh eiie@mainframe.local 'cat >> ~/.ssh/config' <<'EOF'
+Host partikel-*
+  User eiie
+  IdentityFile ~/.ssh/eiieinstallations
+EOF
+```
+
+Rebuild the mainframe:
+
+```bash
+sudo nixos-rebuild switch --flake /path/to/partikelflux/nix/mainframe#mainframe
 ```
 
 ## 3. Prepare PXE Files
@@ -64,12 +117,13 @@ sudo nixos-rebuild switch --flake /path/to/partikelflux/nix#mainframe
 sudo mkdir -p /srv/partikelflux/{configs,secrets}
 
 # Copy configs from repo
-sudo cp /path/to/partikelflux/nix/kiosk.nix /srv/partikelflux/configs/
-sudo cp /path/to/partikelflux/nix/flake.nix /srv/partikelflux/configs/
+sudo cp ./nix/kiosk/kiosk.nix /srv/partikelflux/configs/
+sudo cp ./nix/kiosk/flake.nix /srv/partikelflux/configs/
+sudo cp ./nix/kiosk/authorized-keys /srv/partikelflux/configs/
 
-# Create secrets
-echo "WIFI_PSK_EIIENET=your-wifi-password" | sudo tee /srv/partikelflux/secrets/wifi.env
-mkpasswd -m sha-512 'your-password' | sudo tee /srv/partikelflux/secrets/eiie-password
+# Copy secrets from dev laptop
+scp wifi.env eiie-password eiie@mainframe.local:/tmp/
+sudo mv /tmp/wifi.env /tmp/eiie-password /srv/partikelflux/secrets/
 sudo chmod 600 /srv/partikelflux/secrets/*
 ```
 
@@ -94,51 +148,25 @@ The dev server runs on port 5555, reachable as `http://mainframe.local:5555`.
 Each laptop gets a device ID from its MAC address (last 4 hex chars, e.g. `a3f1`).
 After reboot: hostname `partikel-a3f1`, kiosk URL `mainframe.local:5555/?deviceId=a3f1`.
 
-## 6. Set Up SSH for Deployment
-
-Generate a dedicated key on the mainframe (no passphrase):
-
-```bash
-ssh-keygen -t ed25519 -f ~/.ssh/partikelflux -N "" -C "eiie@mainframe"
-cat ~/.ssh/partikelflux.pub
-```
-
-Add the public key to `nix/kiosk.nix` in the `eiie` user config:
-
-```nix
-openssh.authorizedKeys.keys = [
-  "ssh-ed25519 AAAA... eiie@mainframe"
-];
-```
-
-Add SSH config on the mainframe (`~/.ssh/config`):
-
-```
-Host partikel-*
-  User eiie
-  IdentityFile ~/.ssh/partikelflux
-```
-
-Then rebuild and re-deploy the PXE configs so new installs include the key:
-
-```bash
-sudo nixos-rebuild switch --flake /path/to/partikelflux/nix#mainframe
-sudo cp nix/kiosk.nix /srv/partikelflux/configs/
-```
-
-## 7. Update Kiosk Laptops
+## 6. Update Kiosk Laptops
 
 Deploy config changes to all running laptops from the mainframe:
 
 ```bash
 # Discover all laptops on the network and deploy
-./nix/deploy.sh
+./nix/mainframe/deploy.sh
 
 # Deploy to specific laptops only
-./nix/deploy.sh a3f1 b2c0
+./nix/mainframe/deploy.sh a3f1 b2c0
 
 # Just list discovered laptops
-./nix/deploy.sh --list
+./nix/mainframe/deploy.sh --list
+```
+
+After updating `kiosk.nix`, also copy it to the PXE server so new installs get the change:
+
+```bash
+sudo cp nix/kiosk/kiosk.nix /srv/partikelflux/configs/
 ```
 
 ## Manual USB Install (Alternative)
@@ -146,14 +174,17 @@ Deploy config changes to all running laptops from the mainframe:
 For one-off installs without PXE, boot the NixOS installer ISO from USB:
 
 ```bash
-export WIFI_PSK_EIIENET="your-wifi-password"
-export EIIE_HASHED_PW="$(mkpasswd -m sha-512 'your-password')"
+# 1. Get the installer's IP
+ip a
 
-# Auto-detects disk, BIOS/EFI, generates device ID from MAC
-./nix/install.sh
+# 2. From dev laptop, copy repo and secrets into nix/
+tar cf - partikelflux | ssh nixos@<installer-ip> 'tar xf - -C /tmp/'
+scp wifi.env eiie-password nixos@<installer-ip>:/tmp/partikelflux/nix/kiosk/
 
-# Or override device ID:
-DEVICE_ID=a3f1 ./nix/install.sh
+# 3. On the installer
+cd /tmp/partikelflux/nix/kiosk
+./install.sh                  # auto-detects disk + device ID
+DEVICE_ID=a3f1 ./install.sh   # or override device ID
 ```
 
 ## Notes
@@ -163,3 +194,4 @@ DEVICE_ID=a3f1 ./nix/install.sh
 - The netboot installer skips disks that already have a `nixos` partition (prevents accidental re-install)
 - For faster parallel installs, consider adding `nix-serve` as a local binary cache on the mainframe
 - Secrets (`wifi.env`, `eiie-password`) are never committed to git
+- Password SSH still works alongside key auth — the key just lets `deploy.sh` run without prompts

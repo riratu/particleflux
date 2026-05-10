@@ -8,8 +8,7 @@
 #   1. Boot NixOS installer on the machine
 #   2. nixos-generate-config --root /mnt
 #   3. Copy this as /mnt/etc/nixos/configuration.nix
-#   4. Generate boot-configuration.nix (see install.sh)
-#   5. nixos-install
+#   4. nixos-install
 # ──────────────────────────────────────────────────────────────
 { config, lib, pkgs, netbootSystem, ... }:
 
@@ -21,8 +20,11 @@ let
 in {
   imports = [
     ./hardware-configuration.nix
-    ./boot-configuration.nix
   ];
+
+  # ── Bootloader (GRUB, BIOS) ─────────────────────────────────
+  boot.loader.grub.enable = true;
+  boot.loader.grub.device = "/dev/sda";
 
   # ── Hostname ────────────────────────────────────────────────
   networking.hostName = "mainframe";
@@ -73,6 +75,10 @@ in {
   services.xserver.enable = true;
   services.xserver.displayManager.gdm.enable = true;
   services.desktopManager.gnome.enable = true;
+  services.xserver.desktopManager.gnome.extraGSettingsOverrides = ''
+    [org.gnome.desktop.input-sources]
+    sources=[('xkb', 'ch+de')]
+  '';
 
   # ── Audio ───────────────────────────────────────────────────
   services.pipewire = {

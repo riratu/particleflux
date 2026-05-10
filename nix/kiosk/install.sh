@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────
 # NixOS install for partikelflux kiosk laptops
-# Auto-detects disk, BIOS/EFI, generates boot config.
+# Auto-detects disk, partitions with GRUB (BIOS).
 #
 # Run from the NixOS installer ISO:
 #   WIFI_PSK_EIIENET="..." EIIE_HASHED_PW="..." ./install.sh
@@ -29,13 +29,6 @@ if [[ -z "$TARGET_DISK" ]]; then
   exit 1
 fi
 
-# ── Detect boot mode ─────────────────────────────────────────
-if [ -d /sys/firmware/efi ]; then
-  BOOT_MODE="efi"
-else
-  BOOT_MODE="bios"
-fi
-
 # ── Device ID (from env, arg, or MAC) ────────────────────────
 if [[ -z "${DEVICE_ID:-}" ]]; then
   DEVICE_ID="${1:-}"
@@ -50,98 +43,57 @@ fi
 
 echo ""
 echo "Target disk:  $TARGET_DISK"
-echo "Boot mode:    $BOOT_MODE"
 echo "Device ID:    $DEVICE_ID"
 echo ""
 echo "This will ERASE ${TARGET_DISK}. Press Ctrl+C to abort."
 read -rp "Continue? [y/N] " confirm
 [[ "$confirm" =~ ^[yY]$ ]] || exit 1
 
-# ── Partition ─────────────────────────────────────────────────
-echo ">> Partitioning ${TARGET_DISK} ($BOOT_MODE) ..."
+# ── Partition (BIOS / GRUB) ───────────────────────────────────
+echo ">> Partitioning ${TARGET_DISK} ..."
 sudo wipefs -af "$TARGET_DISK"
+sudo parted "$TARGET_DISK" -- mklabel msdos
+sudo parted "$TARGET_DISK" -- mkpart primary ext4 1MiB 100%
+sudo parted "$TARGET_DISK" -- set 1 boot on
 
-if [[ "$BOOT_MODE" == "bios" ]]; then
-  sudo parted "$TARGET_DISK" -- mklabel msdos
-  sudo parted "$TARGET_DISK" -- mkpart primary ext4 1MiB 100%
-  sudo parted "$TARGET_DISK" -- set 1 boot on
+ROOT_PART="${TARGET_DISK}1"
 
-  ROOT_PART="${TARGET_DISK}1"
-
-  echo ">> Formatting root: $ROOT_PART"
-  sudo mkfs.ext4 -F -L nixos "$ROOT_PART"
-  sudo mount "$ROOT_PART" /mnt
-else
-  sudo parted "$TARGET_DISK" -- mklabel gpt
-  sudo parted "$TARGET_DISK" -- mkpart ESP fat32 1MiB 513MiB
-  sudo parted "$TARGET_DISK" -- set 1 esp on
-  sudo parted "$TARGET_DISK" -- mkpart primary ext4 513MiB 100%
-
-  ESP_PART="${TARGET_DISK}1"
-  ROOT_PART="${TARGET_DISK}2"
-
-  # Handle NVMe / eMMC naming (e.g. /dev/nvme0n1p1)
-  if [[ "$TARGET_DISK" == *nvme* || "$TARGET_DISK" == *mmcblk* ]]; then
-    ESP_PART="${TARGET_DISK}p1"
-    ROOT_PART="${TARGET_DISK}p2"
-  fi
-
-  echo ">> Formatting ESP: $ESP_PART"
-  sudo mkfs.fat -F 32 -n boot "$ESP_PART"
-  echo ">> Formatting root: $ROOT_PART"
-  sudo mkfs.ext4 -F -L nixos "$ROOT_PART"
-
-  sudo mount "$ROOT_PART" /mnt
-  sudo mkdir -p /mnt/boot
-  sudo mount "$ESP_PART" /mnt/boot
-fi
+echo ">> Formatting root: $ROOT_PART"
+sudo mkfs.ext4 -F -L nixos "$ROOT_PART"
+sudo mount "$ROOT_PART" /mnt
 
 # ── Generate hardware config, then overlay our kiosk config ──
 echo ">> Generating hardware configuration ..."
 sudo nixos-generate-config --root /mnt
 
-# ── Generate boot-configuration.nix ──────────────────────────
-echo ">> Generating boot configuration ($BOOT_MODE) ..."
-if [[ "$BOOT_MODE" == "bios" ]]; then
-  sudo tee /mnt/etc/nixos/boot-configuration.nix > /dev/null <<BOOTEOF
-{ ... }:
-{
-  boot.loader.grub.enable = true;
-  boot.loader.grub.device = "$TARGET_DISK";
-  boot.loader.grub.useOSProber = false;
-}
-BOOTEOF
-else
-  sudo tee /mnt/etc/nixos/boot-configuration.nix > /dev/null <<BOOTEOF
-{ ... }:
-{
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
-}
-BOOTEOF
-fi
-
 echo ">> Copying kiosk configuration ..."
 sudo cp "${SCRIPT_DIR}/kiosk.nix"  /mnt/etc/nixos/configuration.nix
 sudo cp "${SCRIPT_DIR}/flake.nix"  /mnt/etc/nixos/
+sudo cp "${SCRIPT_DIR}/authorized-keys" /mnt/etc/nixos/
 
 # ── Write device ID ──────────────────────────────────────────
 echo "$DEVICE_ID" | sudo tee /mnt/etc/device-id > /dev/null
 
-# ── WiFi credentials (not stored in the nix config) ──────────
-# Set these in your environment before running, e.g.:
-#   export WIFI_PSK_EIIENET="your-wifi-password"
-#   export EIIE_HASHED_PW="$(mkpasswd -m sha-512 'your-password')"
-for var in WIFI_PSK_EIIENET EIIE_HASHED_PW; do
-  if [[ -z "${!var:-}" ]]; then
-    echo "Error: ${var} is not set. Export it before running."
+# ── WiFi credentials ─────────────────────────────────────────
+# Expected next to this script (scp them before running):
+#   scp wifi.env eiie-password <installer-ip>:/tmp/partikelflux/nix/
+for secret in wifi.env eiie-password; do
+  if [[ ! -f "${SCRIPT_DIR}/$secret" ]]; then
+    echo "Error: ${SCRIPT_DIR}/$secret not found."
+    echo "Copy secrets first: scp wifi.env eiie-password <installer-ip>:${SCRIPT_DIR}/"
     exit 1
   fi
 done
-echo "WIFI_PSK_EIIENET=${WIFI_PSK_EIIENET}" | sudo tee /mnt/etc/nixos/wifi.env > /dev/null
+sudo cp "${SCRIPT_DIR}/wifi.env" /mnt/etc/nixos/wifi.env
 sudo chmod 600 /mnt/etc/nixos/wifi.env
-echo "${EIIE_HASHED_PW}" | sudo tee /mnt/etc/nixos/eiie-password > /dev/null
+sudo cp "${SCRIPT_DIR}/eiie-password" /mnt/etc/nixos/eiie-password
 sudo chmod 600 /mnt/etc/nixos/eiie-password
+
+# ── Copy repo to target disk (survives reboot) ──────────────
+REPO_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+echo ">> Copying repo to /mnt/home/eiie/partikelflux ..."
+sudo mkdir -p /mnt/home/eiie
+sudo cp -a "$REPO_DIR" /mnt/home/eiie/partikelflux
 
 # ── Install ───────────────────────────────────────────────────
 echo ">> Installing NixOS ..."

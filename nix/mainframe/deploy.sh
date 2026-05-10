@@ -13,8 +13,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SSH_USER="eiie"
 FILES=(
-  "${SCRIPT_DIR}/kiosk.nix"
-  "${SCRIPT_DIR}/flake.nix"
+  "${SCRIPT_DIR}/../kiosk/kiosk.nix"
+  "${SCRIPT_DIR}/../kiosk/flake.nix"
+  "${SCRIPT_DIR}/../kiosk/authorized-keys"
 )
 
 # ── Discover kiosk laptops via avahi ──────────────────────────
@@ -95,6 +96,7 @@ for host in "${TARGETS[@]}"; do
   if ssh -o ConnectTimeout=5 "${SSH_USER}@${host}.local" \
     "sudo cp /tmp/kiosk.nix /etc/nixos/configuration.nix && \
      sudo cp /tmp/flake.nix /etc/nixos/flake.nix && \
+     sudo cp /tmp/authorized-keys /etc/nixos/authorized-keys && \
      sudo nixos-rebuild switch --flake /etc/nixos#partikel" 2>&1; then
     echo "  OK"
     SUCCEEDED+=("$host")

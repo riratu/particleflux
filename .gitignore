@@ -5,3 +5,5 @@ samples/masters
 /nix/eiie-password
 /nix/wifi.env
 /nix/kiosk/authorized-keys
+/nix/kiosk/wifi.env
+/nix/kiosk/eiie-password

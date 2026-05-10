@@ -86,7 +86,7 @@ in {
   users.users.eiie = {
     isNormalUser = true;
     extraGroups = [ "wheel" "networkmanager" ];
-    password = "";
+    hashedPasswordFile = "/etc/nixos/eiie-password";
     openssh.authorizedKeys.keys =
       let
         content = builtins.readFile ./authorized-keys;
@@ -100,12 +100,16 @@ in {
     hashedPassword = "!";
   };
 
+  security.sudo.wheelNeedsPassword = false;
+
   # ── System packages ───────────────────────────────────────
   environment.systemPackages = with pkgs; [
     vim
     git
     htop
   ];
+
+  environment.shellAliases.rebuild = "sudo nixos-rebuild switch --flake /etc/nixos#partikel";
 
   # ── SSH ────────────────────────────────────────────────────
   services.openssh.enable = true;
@@ -125,6 +129,7 @@ in {
      enable = true;
      user = "kiosk";
      program = "${kioskLauncher}";
+     extraArguments = [ "-s" ];
      environment = {
        MOZ_ENABLE_WAYLAND = "1";
        MOZ_WEBRENDER = "1";

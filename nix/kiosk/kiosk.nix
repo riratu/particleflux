@@ -179,7 +179,7 @@ in {
     #lidSwitchExternalPower = "ignore";
     settings.Login = {
       IdleAction = "ignore";
-      HandlePowerKey = "ignore";
+      #HandlePowerKey = "ignore";
       HandleSuspendKey = "ignore";
     };
   };

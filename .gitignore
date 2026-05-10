@@ -4,3 +4,4 @@ dist
 samples/masters
 /nix/eiie-password
 /nix/wifi.env
+/nix/kiosk/authorized-keys

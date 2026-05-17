@@ -10,33 +10,15 @@ let
       ${pkgs.firefox}/bin/firefox --kiosk "${serverUrl}/?deviceId=$DEVICE_ID"
   '';
 
-  hostnameScript = pkgs.writeShellScript "set-particle-hostname" ''
-    ID=$(cat /etc/device-id 2>/dev/null || echo 0)
-    ${pkgs.systemd}/bin/hostnamectl set-hostname "partikel-$ID"
-  '';
-
 in {
   imports = [
     ./hardware-configuration.nix
+    ./hostname.nix
   ];
 
   # ── Bootloader (GRUB, BIOS) ─────────────────────────────────
   boot.loader.grub.enable = true;
   boot.loader.grub.device = "/dev/sda";
-
-  # ── Hostname (overridden at boot from /etc/device-id) ──────
-  networking.hostName = "partikel";
-
-  systemd.services.particle-hostname = {
-    description = "Set hostname from /etc/device-id";
-    wantedBy = [ "multi-user.target" ];
-    before = [ "cage-tty1.service" ];
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = hostnameScript;
-      RemainAfterExit = true;
-    };
-  };
 
   # ── Network ────────────────────────────────────────────────
   networking.networkmanager.enable = true;
@@ -67,6 +49,17 @@ in {
       addresses = true;
       domain = true;
     };
+    extraServiceFiles.partikel = ''
+      <?xml version="1.0" standalone='no'?>
+      <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+      <service-group>
+        <name replace-wildcards="yes">%h</name>
+        <service>
+          <type>_partikel._tcp</type>
+          <port>0</port>
+        </service>
+      </service-group>
+    '';
   };
 
   # ── Firmware ───────────────────────────────────────────────

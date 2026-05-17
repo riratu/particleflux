@@ -71,8 +71,9 @@ sudo cp "${SCRIPT_DIR}/kiosk.nix"  /mnt/etc/nixos/configuration.nix
 sudo cp "${SCRIPT_DIR}/flake.nix"  /mnt/etc/nixos/
 sudo cp "${SCRIPT_DIR}/authorized-keys" /mnt/etc/nixos/
 
-# ── Write device ID ──────────────────────────────────────────
+# ── Write device ID + hostname config ─────────────────────────
 echo "$DEVICE_ID" | sudo tee /mnt/etc/device-id > /dev/null
+echo "{ networking.hostName = \"partikel-${DEVICE_ID}\"; }" | sudo tee /mnt/etc/nixos/hostname.nix > /dev/null
 
 # ── WiFi credentials ─────────────────────────────────────────
 # Expected next to this script (scp them before running):
